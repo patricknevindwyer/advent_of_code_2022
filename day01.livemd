@@ -1,0 +1,67 @@
+# Day 01
+
+```elixir
+Mix.install([
+  {:kino_vega_lite, "~> 0.1.4"}
+])
+```
+
+## Part 01
+
+```elixir
+"~/projects/advent_of_code_2022/data/day01/part01.dat"
+|> Path.expand()
+|> File.read!()
+|> String.split("\n")
+|> Enum.chunk_by(fn elem -> elem == "" end)
+|> Enum.filter(fn entry -> entry != [""] end)
+|> Enum.map(fn entry ->
+  entry |> Enum.map(&String.to_integer/1) |> Enum.sum()
+end)
+|> Enum.max()
+```
+
+## Part 02
+
+```elixir
+"~/projects/advent_of_code_2022/data/day01/part01.dat"
+|> Path.expand()
+|> File.read!()
+|> String.split("\n")
+|> Enum.chunk_by(fn elem -> elem == "" end)
+|> Enum.filter(fn entry -> entry != [""] end)
+|> Enum.map(fn entry ->
+  entry |> Enum.map(&String.to_integer/1) |> Enum.sum()
+end)
+|> Enum.sort()
+|> Enum.reverse()
+|> Enum.take(3)
+|> Enum.sum()
+```
+
+```elixir
+total_calories =
+  "~/projects/advent_of_code_2022/data/day01/part01.dat"
+  |> Path.expand()
+  |> File.read!()
+  |> String.split("\n")
+  |> Enum.chunk_by(fn elem -> elem == "" end)
+  |> Enum.filter(fn entry -> entry != [""] end)
+  |> Enum.map(fn entry ->
+    entry |> Enum.map(&String.to_integer/1) |> Enum.sum()
+  end)
+  |> Enum.sort()
+  |> Enum.reverse()
+
+calories = %{calories: total_calories}
+```
+
+<!-- livebook:{"attrs":{"chart_title":"Total Calories","height":null,"layers":[{"chart_type":"point","color_field":null,"color_field_aggregate":null,"color_field_bin":false,"color_field_scale_scheme":null,"color_field_type":null,"data_variable":"calories","x_field":"calories","x_field_aggregate":null,"x_field_bin":false,"x_field_scale_type":null,"x_field_type":"quantitative","y_field":"calories","y_field_aggregate":null,"y_field_bin":false,"y_field_scale_type":null,"y_field_type":"quantitative"}],"vl_alias":"Elixir.VegaLite","width":600},"kind":"Elixir.KinoVegaLite.ChartCell","livebook_object":"smart_cell"} -->
+
+```elixir
+VegaLite.new(width: 600, title: "Total Calories")
+|> VegaLite.data_from_values(calories, only: ["calories"])
+|> VegaLite.mark(:point)
+|> VegaLite.encode_field(:x, "calories", type: :quantitative)
+|> VegaLite.encode_field(:y, "calories", type: :quantitative)
+```
