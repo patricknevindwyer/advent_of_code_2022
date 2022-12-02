@@ -1,0 +1,78 @@
+# Day 02
+
+## Part 01
+
+```elixir
+defmodule RockPaperScissors do
+  def score_round(them, me) do
+    score_toss(translate(them), translate(me)) + score_selection(me)
+  end
+
+  def score_selection("X"), do: 1
+  def score_selection("Y"), do: 2
+  def score_selection("Z"), do: 3
+
+  def translate("A"), do: :rock
+  def translate("B"), do: :paper
+  def translate("C"), do: :scissor
+  def translate("X"), do: :rock
+  def translate("Y"), do: :paper
+  def translate("Z"), do: :scissor
+
+  def score_toss(a, b) when a == b, do: 3
+  def score_toss(:rock, :paper), do: 6
+  def score_toss(:rock, :scissor), do: 0
+  def score_toss(:paper, :rock), do: 0
+  def score_toss(:paper, :scissor), do: 6
+  def score_toss(:scissor, :rock), do: 6
+  def score_toss(:scissor, :paper), do: 0
+
+  def load_game(bin) do
+    bin
+    |> String.trim()
+    |> String.split("\n")
+    |> Enum.map(fn line -> String.split(line, " ") end)
+  end
+
+  def pick_response(them, me) do
+    case {translate(them), translate_outcome(me)} do
+      {:rock, :lose} -> "Z"
+      {:rock, :draw} -> "X"
+      {:rock, :win} -> "Y"
+      {:paper, :lose} -> "X"
+      {:paper, :draw} -> "Y"
+      {:paper, :win} -> "Z"
+      {:scissor, :lose} -> "Y"
+      {:scissor, :draw} -> "Z"
+      {:scissor, :win} -> "X"
+    end
+  end
+
+  def translate_outcome("X"), do: :lose
+  def translate_outcome("Y"), do: :draw
+  def translate_outcome("Z"), do: :win
+end
+```
+
+```elixir
+"~/projects/advent_of_code_2022/data/day02/part01.dat"
+|> Path.expand()
+|> File.read!()
+|> RockPaperScissors.load_game()
+|> Enum.map(fn [them, me] -> RockPaperScissors.score_round(them, me) end)
+|> Enum.sum()
+```
+
+## Part 02
+
+```elixir
+"~/projects/advent_of_code_2022/data/day02/part01.dat"
+|> Path.expand()
+|> File.read!()
+|> RockPaperScissors.load_game()
+|> Enum.map(fn [them, outcome] ->
+  me = RockPaperScissors.pick_response(them, outcome)
+  RockPaperScissors.score_round(them, me)
+end)
+|> Enum.sum()
+```
