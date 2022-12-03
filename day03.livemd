@@ -1,0 +1,55 @@
+# Day 03
+
+## Data
+
+```elixir
+bags =
+  "#{__DIR__}/data/day03/part01.dat"
+  |> File.read!()
+  |> String.split("\n")
+  |> Enum.map(fn line ->
+    line |> String.split_at(div(String.length(line), 2))
+  end)
+```
+
+```elixir
+defmodule Bags do
+  @priority_list "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" |> String.graphemes()
+
+  def priority_value(letter) do
+    Enum.find_index(@priority_list, fn p_value -> p_value == letter end) + 1
+  end
+end
+```
+
+## Part 01
+
+```elixir
+bags
+|> Enum.map(fn {left, right} ->
+  {
+    left |> String.graphemes() |> MapSet.new(),
+    right |> String.graphemes() |> MapSet.new()
+  }
+end)
+|> Enum.map(fn {left, right} -> MapSet.intersection(left, right) end)
+|> Enum.map(fn common -> common |> MapSet.to_list() |> List.first() end)
+|> Enum.map(&Bags.priority_value/1)
+|> Enum.sum()
+```
+
+## Part 02
+
+```elixir
+bags
+|> Enum.map(fn {left, right} ->
+  (left <> right) |> String.graphemes() |> MapSet.new()
+end)
+|> Enum.chunk_every(3)
+|> Enum.map(fn [bag_a, bag_b, bag_c] ->
+  bag_a |> MapSet.intersection(bag_b) |> MapSet.intersection(bag_c)
+end)
+|> Enum.map(fn common -> common |> MapSet.to_list() |> List.first() end)
+|> Enum.map(&Bags.priority_value/1)
+|> Enum.sum()
+```
