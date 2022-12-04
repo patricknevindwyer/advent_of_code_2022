@@ -1,0 +1,44 @@
+# Day 04
+
+## Data
+
+```elixir
+assignments =
+  "#{__DIR__}/data/day04/part01.dat"
+  |> File.read!()
+  |> String.split("\n")
+  |> Enum.map(fn line ->
+    [a, b] = String.split(line, ",")
+    [a_st, a_ed] = String.split(a, "-")
+    [b_st, b_ed] = String.split(b, "-")
+
+    {{String.to_integer(a_st), String.to_integer(a_ed)},
+     {String.to_integer(b_st), String.to_integer(b_ed)}}
+  end)
+```
+
+## Part 01
+
+```elixir
+assignments
+|> Enum.filter(fn {{a_st, a_ed}, {b_st, b_ed}} ->
+  # does a exist wholly in b?
+  a_in_b = a_st >= b_st && a_ed <= b_ed
+
+  # does b exist wholly in a?
+  b_in_a = b_st >= a_st && b_ed <= a_ed
+
+  a_in_b || b_in_a
+end)
+|> length()
+```
+
+## Part 02
+
+```elixir
+assignments
+|> Enum.reject(fn {{a_st, a_ed}, {b_st, b_ed}} ->
+  Range.disjoint?(Range.new(a_st, a_ed), Range.new(b_st, b_ed))
+end)
+|> length()
+```
