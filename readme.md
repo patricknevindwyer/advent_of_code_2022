@@ -4,6 +4,7 @@ Advent of Code 2022 using Elixir and LiveBook.
  - ★★ [Day 02](day02.livemd)
  - ★★ [Day 03](day03.livemd)
  - ★★ [Day 04](day04.livemd)
+ - ★★ [Day 05](day05.livemd)
  
  
  

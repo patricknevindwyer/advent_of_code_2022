@@ -1,0 +1,142 @@
+# Day 05
+
+## Data
+
+Initial section looks like:
+
+```
+    [D]    
+[N] [C]    
+[Z] [M] [P]
+ 1   2   3 
+
+move 1 from 2 to 1
+move 3 from 1 to 3
+move 2 from 2 to 1
+move 1 from 1 to 2
+```
+
+```elixir
+[raw_stacks, raw_instructions] =
+  "#{__DIR__}/data/day05/part01.dat"
+  |> File.read!()
+  |> String.split("\n\n")
+
+instructions = raw_instructions |> Stacks.parse_instructins()
+stacks = raw_stacks |> Stacks.parse_stacks()
+```
+
+```elixir
+defmodule Stacks do
+  def parse_stacks(bin) do
+    bin
+    |> String.trim()
+    |> String.split("\n")
+    |> Enum.reverse()
+    |> Enum.drop(1)
+    |> Enum.reverse()
+    |> Enum.map(&parse_layer/1)
+    |> layers_to_stacks()
+  end
+
+  def parse_instructins(instructions) do
+    instructions
+    |> String.split("\n")
+    |> Enum.map(&parse_instruction/1)
+  end
+
+  defp parse_instruction(instruction) do
+    [_, count, _, from, _, to] = instruction |> String.split(" ")
+    %{count: String.to_integer(count), from: String.to_integer(from), to: String.to_integer(to)}
+  end
+
+  defp parse_layer(layer) do
+    layer |> String.graphemes() |> parse_cell()
+  end
+
+  defp parse_cell(cells), do: parse_cell([], cells)
+  defp parse_cell(acc, []), do: acc
+
+  defp parse_cell(acc, [_r, c, _l | rest]) do
+    parse_cell(acc ++ [c], Enum.drop(rest, 1))
+  end
+
+  defp layers_to_stacks(layers) do
+    # build the stack
+    stack_count = layers |> List.first() |> length()
+
+    # convert the layers to the stacks
+    0..(stack_count - 1)
+    |> Enum.map(fn col_idx ->
+      col_stack =
+        layers
+        |> Enum.map(fn layer -> Enum.at(layer, col_idx) end)
+        |> Enum.reject(fn cell -> cell == " " end)
+
+      {col_idx + 1, col_stack}
+    end)
+    |> Map.new()
+  end
+
+  def update_stack(stack, %{count: c, from: f, to: t}, opts \\ []) do
+    reverse_stack = Keyword.get(opts, :reverse, true)
+
+    # items to move
+    items =
+      if reverse_stack do
+        stack |> Map.get(f) |> Enum.take(c) |> Enum.reverse()
+      else
+        stack |> Map.get(f) |> Enum.take(c)
+      end
+
+    # updated from stack
+    new_from = stack |> Map.get(f) |> Enum.drop(c)
+
+    # updated to stack
+    new_to = items ++ (stack |> Map.get(t))
+
+    # return
+    stack |> Map.put(f, new_from) |> Map.put(t, new_to)
+  end
+
+  def first_in_stacks(stack) do
+    stack
+    |> Map.keys()
+    |> Enum.sort()
+    |> Enum.map(fn k ->
+      Map.get(stack, k)
+      |> List.first()
+    end)
+  end
+end
+```
+
+## Part 01
+
+```elixir
+# Stacks - left of list is top of stack
+Enum.reduce(
+  instructions,
+  stacks,
+  fn instruction, updated_stack ->
+    Stacks.update_stack(updated_stack, instruction)
+  end
+)
+|> Stacks.first_in_stacks()
+|> Enum.join("")
+```
+
+## Part 02
+
+```elixir
+# Stacks - left of list is top of stack
+Enum.reduce(
+  instructions,
+  stacks,
+  fn instruction, updated_stack ->
+    Stacks.update_stack(updated_stack, instruction, reverse: false)
+  end
+)
+|> Stacks.first_in_stacks()
+|> Enum.join("")
+```
