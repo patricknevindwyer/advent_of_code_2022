@@ -1,0 +1,59 @@
+# Day 06
+
+## Data
+
+```elixir
+data =
+  "#{__DIR__}/data/day06/part01.dat"
+  |> File.read!()
+```
+
+```elixir
+defmodule Signal do
+  def find_marker(stream) do
+    stream
+    |> String.graphemes()
+    |> scan_for_marker(4)
+  end
+
+  defp scan_for_marker([a, b, c, d | rest], offset) do
+    if [a, b, c, d] |> MapSet.new() |> MapSet.size() == 4 do
+      offset
+    else
+      scan_for_marker([b, c, d] ++ rest, offset + 1)
+    end
+  end
+
+  defp scan_for_marker(_, _), do: -1
+
+  def find_message(stream) do
+    stream
+    |> String.graphemes()
+    |> scan_for_message(14)
+  end
+
+  defp scan_for_message([a, b, c, d, e, f, g, h, i, j, k, l, m, n | rest], offset) do
+    if [a, b, c, d, e, f, g, h, i, j, k, l, m, n] |> MapSet.new() |> MapSet.size() == 14 do
+      offset
+    else
+      scan_for_message([b, c, d, e, f, g, h, i, j, k, l, m, n] ++ rest, offset + 1)
+    end
+  end
+
+  defp scan_for_message(_, _), do: -1
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> Signal.find_marker()
+```
+
+## Part 02
+
+```elixir
+data
+|> Signal.find_message()
+```
