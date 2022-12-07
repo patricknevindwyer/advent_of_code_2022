@@ -1,0 +1,154 @@
+# Day 07
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day07/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule FileSystem do
+  def parse_commands(command_string) do
+    command_string
+    |> String.split("\n")
+    |> Enum.map(&parse_command/1)
+  end
+
+  defp parse_command("$ ls") do
+    :nop
+  end
+
+  defp parse_command("$ cd /") do
+    {:cd, :root}
+  end
+
+  defp parse_command("$ cd ..") do
+    {:cd, :pop}
+  end
+
+  defp parse_command("$ cd " <> dir) do
+    {:cd, dir}
+  end
+
+  defp parse_command("dir " <> p) do
+    {:folder, p}
+  end
+
+  defp parse_command(file) do
+    [raw_size, name] = file |> String.split(" ")
+    {:file, name, String.to_integer(raw_size)}
+  end
+
+  def build_file_system(commands) do
+    inner_fs(commands, [], MapSet.new(["/"]), MapSet.new([]))
+  end
+
+  defp inner_fs([], _path, paths, files),
+    do: {paths |> MapSet.to_list(), files |> MapSet.to_list()}
+
+  defp inner_fs([command | commands], path, paths, files) do
+    # evaluate our commands
+    {n_path, n_paths, n_files} =
+      case command do
+        :nop ->
+          {path, paths, files}
+
+        {:cd, :root} ->
+          {[], paths, files}
+
+        {:cd, :pop} ->
+          {
+            path |> Enum.reverse() |> Enum.drop(1) |> Enum.reverse(),
+            paths,
+            files
+          }
+
+        {:cd, dir} ->
+          {path ++ [dir], paths, files}
+
+        {:folder, f} ->
+          {
+            path,
+            paths |> MapSet.put(Enum.join([""] ++ path ++ [f], "/")),
+            files
+          }
+
+        {:file, name, size} ->
+          {
+            path,
+            paths,
+            files |> MapSet.put({Enum.join([""] ++ path ++ [name], "/"), size})
+          }
+      end
+
+    # recurse
+    inner_fs(commands, n_path, n_paths, n_files)
+  end
+
+  def directory_sizes({paths, files}) do
+    paths
+    |> Enum.map(fn path ->
+      dir_size =
+        files
+        |> Enum.filter(fn {file_name, _file_size} ->
+          if path == "/" do
+            true
+          else
+            # catch paths with file name duplicates
+            String.starts_with?(file_name, path <> "/")
+          end
+        end)
+        |> Enum.reject(fn {file_name, _fize_size} -> file_name == path end)
+        |> Enum.map(fn {_file_name, file_size} -> file_size end)
+        |> Enum.sum()
+
+      {path, dir_size}
+    end)
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+
+# Build the file system
+|> FileSystem.parse_commands()
+|> FileSystem.build_file_system()
+
+# analyze directories
+|> FileSystem.directory_sizes()
+|> Enum.sort_by(fn {d, _s} -> d end)
+
+# filter for size
+|> Enum.filter(fn {_path, dir_size} -> dir_size <= 100_000 end)
+|> Enum.map(fn {_path, dir_size} -> dir_size end)
+|> Enum.sum()
+```
+
+## Part 02
+
+```elixir
+directory_sizes =
+  data
+
+  # Build the file system
+  |> FileSystem.parse_commands()
+  |> FileSystem.build_file_system()
+
+  # analyze directories
+  |> FileSystem.directory_sizes()
+
+# find the root directory, and determine how much space we need to clear up
+[{_root, root_size}] = directory_sizes |> Enum.filter(fn {path, _size} -> path == "/" end)
+free_space = 70_000_000 - root_size
+needed_space = 30_000_000 - free_space
+
+# find directories we can delete to meet the free space requirement
+directory_sizes
+|> Enum.filter(fn {_path, size} -> size >= needed_space end)
+|> Enum.sort_by(fn {_path, size} -> size end)
+|> List.first()
+|> elem(1)
+```
