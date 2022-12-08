@@ -1,0 +1,173 @@
+# Day 08
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day08/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Grid do
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(fn row ->
+      row
+      |> String.graphemes()
+      |> Enum.map(&String.to_integer/1)
+    end)
+  end
+
+  def find_visible_trees(grid) do
+    # analyze the whole grid, starting
+    # with a row map
+    row_analysis = grid |> visible_in_grid()
+
+    # now rotate the grid CW, and analyze
+    col_analysis = grid |> rotate(:cw) |> visible_in_grid() |> rotate(:ccw)
+
+    # flatten, merge, chunk
+    Enum.zip(
+      row_analysis |> List.flatten(),
+      col_analysis |> List.flatten()
+    )
+    |> Enum.map(fn {a, b} -> a || b end)
+    |> Enum.chunk_every(grid |> List.first() |> length())
+  end
+
+  def viewing_distances(grid) do
+    # analyze the whole grid, starting
+    # with a row map
+    row_analysis = grid |> viewing_distance()
+
+    # now rotate the grid CW, and analyze
+    col_analysis = grid |> rotate(:cw) |> viewing_distance() |> rotate(:ccw)
+
+    # flatten, merge, chunk
+    Enum.zip(
+      row_analysis |> List.flatten(),
+      col_analysis |> List.flatten()
+    )
+    |> Enum.map(fn {{l, r}, {u, d}} -> Enum.reduce([l, r, u, d], 1, fn a, b -> a * b end) end)
+    |> Enum.chunk_every(grid |> List.first() |> length())
+  end
+
+  defp rotate(grid, :cw) do
+    dim = grid |> List.first() |> length()
+
+    (dim - 1)..0//-1
+    |> Enum.map(fn col ->
+      grid |> get_column(col)
+    end)
+  end
+
+  defp rotate(grid, :ccw) do
+    dim = grid |> List.first() |> length()
+
+    0..(dim - 1)
+    |> Enum.map(fn col ->
+      grid |> get_column(col) |> Enum.reverse()
+    end)
+  end
+
+  defp get_column(grid, col_idx) do
+    grid
+    |> Enum.map(fn row -> Enum.at(row, col_idx) end)
+  end
+
+  defp viewing_distance(grid) do
+    grid
+    |> Enum.map(fn row ->
+      # for each entry in this row, we want to calculate how far it can
+      # see in either direction
+      row
+      |> Enum.with_index()
+      |> Enum.map(fn {_tree, row_idx} ->
+        {look(row, row_idx, :left), look(row, row_idx, :right)}
+      end)
+    end)
+  end
+
+  defp look(row, idx, :left) do
+    if idx == 0 do
+      0
+    else
+      tree = Enum.at(row, idx)
+      look_step(row, tree, idx - 1, -1, 1)
+    end
+  end
+
+  defp look(row, idx, :right) do
+    if idx == length(row) - 1 do
+      0
+    else
+      tree = Enum.at(row, idx)
+      look_step(row, tree, idx + 1, 1, 1)
+    end
+  end
+
+  defp look_step(row, tree_height, idx, step, tree_count) do
+    comp_tree = Enum.at(row, idx)
+
+    cond do
+      idx == 0 ->
+        tree_count
+
+      idx == length(row) - 1 ->
+        tree_count
+
+      comp_tree >= tree_height ->
+        tree_count
+
+      true ->
+        look_step(row, tree_height, idx + step, step, tree_count + 1)
+    end
+  end
+
+  defp visible_in_grid(grid) do
+    grid
+    |> Enum.map(fn row ->
+      Enum.zip(
+        # forwards
+        row |> visible_in_row(),
+
+        # backwards
+        row |> Enum.reverse() |> visible_in_row() |> Enum.reverse()
+      )
+      |> Enum.map(fn {a, b} -> a || b end)
+    end)
+  end
+
+  defp visible_in_row(row) do
+    row
+    |> Enum.reduce({[], -1}, fn tree, {row_map, max_height} ->
+      if tree > max_height do
+        {row_map ++ [true], tree}
+      else
+        {row_map ++ [false], max_height}
+      end
+    end)
+    |> elem(0)
+  end
+end
+```
+
+## Part 01
+
+```elixir
+Grid.parse(data)
+|> Grid.find_visible_trees()
+|> List.flatten()
+|> Enum.filter(fn v -> v end)
+|> length()
+```
+
+## Part 02
+
+```elixir
+Grid.parse(data)
+|> Grid.viewing_distances()
+|> List.flatten()
+|> Enum.min_max()
+|> elem(1)
+```
