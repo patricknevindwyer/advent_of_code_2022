@@ -1,0 +1,141 @@
+# Day 09
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day09/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Rope do
+  def parse_steps(raw) when is_binary(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_instruction/1)
+    |> Enum.map(&generate_steps/1)
+    |> List.flatten()
+  end
+
+  # String to raw instruction
+  defp parse_instruction("R " <> steps), do: {:right, steps}
+  defp parse_instruction("L " <> steps), do: {:left, steps}
+  defp parse_instruction("U " <> steps), do: {:up, steps}
+  defp parse_instruction("D " <> steps), do: {:down, steps}
+
+  # step generation
+  defp generate_steps({dir, v}), do: generate_steps({dir, String.to_integer(v)}, [])
+  defp generate_steps({_dir, 0}, steps), do: steps
+
+  defp generate_steps({dir, v}, steps) do
+    generate_steps({dir, v - 1}, steps ++ [dir])
+  end
+
+  # Move a {head, tail} rope
+  def move_rope(instructions, head_init, tail_init) do
+    rope_step(instructions, head_init, tail_init, MapSet.new([tail_init]))
+  end
+
+  defp rope_step([], head_pos, tail_pos, tail_positions),
+    do: %{head: head_pos, tail: tail_pos, visited: tail_positions}
+
+  defp rope_step([instruction | instructions], head_pos, tail_pos, tail_positions) do
+    # update the rope head and tail
+    new_head = move_head(head_pos, instruction)
+    new_tail = move_tail(new_head, tail_pos)
+
+    # record and continue
+    rope_step(instructions, new_head, new_tail, tail_positions |> MapSet.put(new_tail))
+  end
+
+  # Move a rope of any length
+  def move_long_rope(instructions, size) do
+    rope =
+      0..(size - 1)
+      |> Enum.map(fn _idx -> {0, 0} end)
+
+    long_rope_step(instructions, rope, MapSet.new([{0, 0}]))
+  end
+
+  defp long_rope_step([], rope, visited), do: %{rope: rope, visited: visited}
+
+  defp long_rope_step([instruction | instructions], [rope_head | rope_tail], tail_positions) do
+    # update the head
+    new_head = move_head(rope_head, instruction)
+
+    # update everyone else
+    new_rope = tail_update(new_head, rope_tail)
+
+    # track the last member
+    abs_tail = new_rope |> Enum.reverse() |> List.first()
+
+    long_rope_step(instructions, new_rope, tail_positions |> MapSet.put(abs_tail))
+  end
+
+  defp tail_update(leader, []), do: [leader]
+
+  defp tail_update(leader, [tail | rest]) do
+    new_tail = move_tail(leader, tail)
+    [leader] ++ tail_update(new_tail, rest)
+  end
+
+  # Generalized rope position updates
+  defp move_head({h_x, h_y}, :up), do: {h_x, h_y - 1}
+  defp move_head({h_x, h_y}, :down), do: {h_x, h_y + 1}
+  defp move_head({h_x, h_y}, :left), do: {h_x - 1, h_y}
+  defp move_head({h_x, h_y}, :right), do: {h_x + 1, h_y}
+
+  defp move_tail({h_x, h_y}, {t_x, t_y}) do
+    d_x = h_x - t_x
+    d_y = h_y - t_y
+
+    {t_d_x, t_d_y} =
+      case {d_x, d_y} do
+        # cardinal moves
+        {2, 0} -> {1, 0}
+        {-2, 0} -> {-1, 0}
+        {0, 2} -> {0, 1}
+        {0, -2} -> {0, -1}
+        # long ordinals
+        {2, 2} -> {1, 1}
+        {2, -2} -> {1, -1}
+        {-2, 2} -> {-1, 1}
+        {-2, -2} -> {-1, -1}
+        # knight moves TR
+        {1, -2} -> {1, -1}
+        {2, -1} -> {1, -1}
+        # knight moves BR
+        {2, 1} -> {1, 1}
+        {1, 2} -> {1, 1}
+        # knight moves BL
+        {-1, 2} -> {-1, 1}
+        {-2, 1} -> {-1, 1}
+        # knight moves TL
+        {-2, -1} -> {-1, -1}
+        {-1, -2} -> {-1, -1}
+        _ -> {0, 0}
+      end
+
+    {t_x + t_d_x, t_y + t_d_y}
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> Rope.parse_steps()
+|> Rope.move_rope({0, 0}, {0, 0})
+|> Map.get(:visited)
+|> MapSet.size()
+```
+
+## Part 02
+
+```elixir
+data
+|> Rope.parse_steps()
+|> Rope.move_long_rope(10)
+|> Map.get(:visited)
+|> MapSet.size()
+```
