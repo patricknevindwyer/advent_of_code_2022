@@ -1,0 +1,144 @@
+# Day 10
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day10/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Cpu do
+  def parse_instructions(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_instruction/1)
+    |> List.flatten()
+  end
+
+  defp parse_instruction(line) do
+    case String.split(line, " ") do
+      ["noop"] -> [:noop]
+      ["addx", amt] -> [:empty, {:addx, String.to_integer(amt)}]
+    end
+  end
+
+  def run(instructions) do
+    samples = cycle(instructions, %{x: 1, cycle: 1}, [], 20)
+
+    # we want every other after our first sample (start at 20th, sample every 40 thereafter)
+    ([0] ++ samples) |> Enum.drop_every(2)
+  end
+
+  defp cycle([], _registers, samples, _sample_rate), do: samples
+
+  defp cycle(
+         [instruction | instructions],
+         %{x: x, cycle: cycle} = registers,
+         samples,
+         sample_rate
+       ) do
+    # are we at our sample rate?
+    sample =
+      if rem(cycle, sample_rate) == 0 do
+        [x * cycle]
+      else
+        []
+      end
+
+    # run our instruction
+    register_update =
+      case instruction do
+        :noop -> registers
+        :empty -> registers
+        {:addx, amt} -> %{x: x + amt}
+      end
+
+    # continue
+    cycle(
+      instructions,
+      registers |> Map.merge(register_update) |> Map.put(:cycle, cycle + 1),
+      samples ++ sample,
+      sample_rate
+    )
+  end
+
+  def draw_crt(instructions) do
+    cycle_crt(instructions, %{crt_row: [], crt: [], x: 1, cycle: 1})
+  end
+
+  def render(screen, on_char, off_char) do
+    screen
+    |> Enum.map(fn row ->
+      row
+      |> Enum.map(fn cell ->
+        if cell == :on do
+          on_char
+        else
+          off_char
+        end
+      end)
+      |> Enum.join("")
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp cycle_crt([], %{crt_row: crt_row, crt: crt}) do
+    if length(crt_row) > 0 do
+      crt + [crt_row]
+    else
+      crt
+    end
+  end
+
+  defp cycle_crt([instruction | instructions], %{crt_row: crt_row, crt: crt, x: x, cycle: cycle}) do
+    # figure out our sprite position
+    sprite_align = x - (crt_row |> length())
+
+    # draw a cell
+    cell =
+      if sprite_align >= -1 && sprite_align <= 1 do
+        :on
+      else
+        :off
+      end
+
+    # register update
+    x_update =
+      case instruction do
+        :noop -> x
+        :empty -> x
+        {:addx, amt} -> x + amt
+      end
+
+    # crt row update
+    {u_crt, u_crt_row} =
+      if length(crt_row) == 39 do
+        {crt ++ [crt_row ++ [cell]], []}
+      else
+        {crt, crt_row ++ [cell]}
+      end
+
+    # continue
+    cycle_crt(instructions, %{crt_row: u_crt_row, crt: u_crt, x: x_update, cycle: cycle + 1})
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> Cpu.parse_instructions()
+|> Cpu.run()
+|> Enum.sum()
+```
+
+## Part 02
+
+```elixir
+data
+|> Cpu.parse_instructions()
+|> Cpu.draw_crt()
+|> Cpu.render("🟩", "⬜️")
+|> IO.puts()
+```
