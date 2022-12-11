@@ -1,0 +1,199 @@
+# Day 11
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day11/part01.dat" |> File.read!()
+```
+
+```
+Monkey 0:
+  Starting items: 79, 98
+  Operation: new = old * 19
+  Test: divisible by 23
+    If true: throw to monkey 2
+    If false: throw to monkey 3
+```
+
+```elixir
+defmodule Monkeys do
+  def parse(raw) do
+    raw
+    |> String.split("\n\n")
+    |> Enum.map(&parse_monkey/1)
+    |> insert_modulus()
+  end
+
+  def rounds(monkeys, rounds, control \\ :divide) do
+    0..(rounds - 1)
+    |> Enum.reduce(monkeys, fn _round, monkey_acc -> run_monkey_round(monkey_acc, control) end)
+  end
+
+  defp run_monkey_round(monkeys, control) do
+    # convert the monkeys to a map for easy of use
+    monkeys_map = monkeys |> Enum.map(fn %{monkey: id} = monkey -> {id, monkey} end) |> Map.new()
+
+    # walk through the monkeys in order
+    monkeys
+    |> Enum.map(fn %{monkey: id} -> id end)
+    |> Enum.sort()
+    |> Enum.reduce(
+      monkeys_map,
+      fn monkey_id, monkeys_map_acc ->
+        monkey = monkeys_map_acc |> Map.get(monkey_id)
+
+        # for this monkey we need to select all items
+        dest_and_items =
+          monkey
+          |> Map.get(:items)
+
+          # apply the operation for this item
+          |> Enum.map(fn item -> monkey.op.(item) end)
+
+          # reduce interest in the item
+          |> Enum.map(fn item ->
+            if control == :divide do
+              trunc(item / 3)
+            else
+              monkey.modulus.(item)
+            end
+          end)
+
+          # and finally determine where it's going
+          |> Enum.map(fn item ->
+            if monkey.test.(item) do
+              {monkey.if_true, item}
+            else
+              {monkey.if_false, item}
+            end
+          end)
+
+          # and gather the items going to the different monkeys
+          |> Enum.group_by(fn {dest, _item} -> dest end, fn {_dest, item} -> item end)
+
+        # now we have some monkeys to update
+        updated_monkeys =
+          dest_and_items
+          |> Enum.reduce(monkeys_map_acc, fn {dest, items}, mma ->
+            # place the items
+            dest_monkey = mma |> Map.get(dest)
+            updated_monkey = dest_monkey |> Map.put(:items, dest_monkey.items ++ items)
+
+            # update monkey
+            mma |> Map.put(dest, updated_monkey)
+          end)
+
+        # and we need to update our own items inspection number
+        updated_monkeys
+        |> Map.put(
+          monkey_id,
+          monkey |> Map.merge(%{inspected: monkey.inspected + length(monkey.items), items: []})
+        )
+      end
+    )
+    |> Map.values()
+  end
+
+  defp insert_modulus(monkeys) do
+    l =
+      monkeys
+      |> Enum.map(fn %{divisor: d} -> d end)
+      |> lcm()
+
+    monkeys
+    |> Enum.map(fn monkey ->
+      monkey
+      |> Map.put(:modulus, fn v -> rem(v, l) end)
+    end)
+  end
+
+  defp parse_monkey(monkey) do
+    [
+      monkey,
+      items,
+      operation,
+      test,
+      if_true,
+      if_false
+    ] = monkey |> String.trim() |> String.split("\n") |> Enum.map(&String.trim/1)
+
+    %{
+      monkey: monkey |> parse_monkey_id(),
+      items: items |> parse_monkey_items(),
+      op: operation |> parse_monkey_operation(),
+      test: test |> parse_monkey_test(),
+      if_true: if_true |> parse_destination_monkey(),
+      if_false: if_false |> parse_destination_monkey(),
+      inspected: 0,
+      divisor: test |> parse_monkey_divisor()
+    }
+  end
+
+  defp parse_monkey_id("Monkey " <> id),
+    do: id |> String.replace_trailing(":", "") |> String.to_integer()
+
+  defp parse_monkey_items("Starting items: " <> items),
+    do: items |> String.split(", ") |> Enum.map(&String.to_integer/1)
+
+  defp parse_monkey_operation("Operation: new = old " <> op) do
+    case String.split(op, " ") do
+      ["*", "old"] -> fn v -> v * v end
+      ["+", "old"] -> fn v -> v + v end
+      ["*", num] -> fn v -> v * String.to_integer(num) end
+      ["+", num] -> fn v -> v + String.to_integer(num) end
+    end
+  end
+
+  defp parse_monkey_test("Test: divisible by " <> denom),
+    do: fn v -> rem(v, String.to_integer(denom)) == 0 end
+
+  defp parse_monkey_divisor("Test: divisible by " <> denom), do: String.to_integer(denom)
+
+  defp parse_destination_monkey(raw) do
+    raw
+    |> String.split(": ")
+    |> Enum.reverse()
+    |> List.first()
+    |> String.split(" ")
+    |> Enum.reverse()
+    |> List.first()
+    |> String.to_integer()
+  end
+
+  def lcm([a, b]), do: lcm(a, b)
+  def lcm([a | rest]), do: lcm(a, lcm(rest))
+  def lcm(_a, 0), do: 0
+  def lcm(0, _b), do: 0
+  def lcm(a, b) when is_integer(a) and is_integer(b), do: div(abs(a * b), Integer.gcd(a, b))
+end
+```
+
+## Part 01
+
+```elixir
+[a, b] =
+  data
+  |> Monkeys.parse()
+  |> Monkeys.rounds(20)
+  |> Enum.map(fn %{inspected: i} -> i end)
+  |> Enum.sort()
+  |> Enum.reverse()
+  |> Enum.take(2)
+
+a * b
+```
+
+## Part 02
+
+```elixir
+[a, b] =
+  data
+  |> Monkeys.parse()
+  |> Monkeys.rounds(10_000, :modulus)
+  |> Enum.map(fn %{inspected: i} -> i end)
+  |> Enum.sort()
+  |> Enum.reverse()
+  |> Enum.take(2)
+
+a * b
+```
