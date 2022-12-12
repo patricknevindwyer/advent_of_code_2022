@@ -1,0 +1,126 @@
+# Day 12
+
+```elixir
+Mix.install([
+  {:eastar, "~> 0.5.1"}
+])
+```
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day12/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Climber do
+  def parse(raw) do
+    map_data =
+      raw
+      |> String.split("\n")
+      |> Enum.with_index()
+      |> Enum.map(fn {row, row_idx} ->
+        row
+        |> String.graphemes()
+        |> Enum.with_index()
+        |> Enum.map(fn {cell, col_idx} ->
+          case cell do
+            "E" -> [{:location, col_idx, row_idx, 26}, {:waypoint, col_idx, row_idx, :end}]
+            "S" -> [{:location, col_idx, row_idx, 1}, {:waypoint, col_idx, row_idx, :start}]
+            c -> [{:location, col_idx, row_idx, (c |> String.to_charlist() |> List.first()) - 96}]
+          end
+        end)
+      end)
+      |> List.flatten()
+
+    # convert the map data into our environmental data
+    %{
+      start_at: map_data |> find_waypoint(:start),
+      end_at: map_data |> find_waypoint(:end),
+      map: map_data |> condense_environment()
+    }
+  end
+
+  defp find_waypoint(map_data, loc) do
+    map_data
+    |> Enum.filter(fn {t, _c, _r, l} -> t == :waypoint && l == loc end)
+    |> Enum.map(fn {_t, c, r, _l} -> {c, r} end)
+    |> List.first()
+  end
+
+  defp condense_environment(map_data) do
+    map_data
+    |> Enum.filter(fn {t, _c, _r, _l} -> t == :location end)
+    |> Enum.map(fn {_t, c, r, h} -> {{c, r}, h} end)
+    |> Map.new()
+  end
+
+  def find_path(env, start_at, end_at) do
+    Astar.astar(
+      {
+        fn {x, y} ->
+          # what is my height
+          current_height = env |> Map.get({x, y})
+
+          # find neighbors  
+          [{x - 1, y}, {x + 1, y}, {x, y - 1}, {x, y + 1}]
+          |> Enum.map(fn neighbor ->
+            # does neighbor exist?
+            {neighbor, env |> Map.get(neighbor, nil)}
+          end)
+
+          # filter out neighbors that don't exist
+          |> Enum.reject(fn {_n, h} -> h == nil end)
+
+          # filter out neighbors that climb too quick
+          |> Enum.filter(fn {_n, h} -> h <= current_height + 1 end)
+
+          # these are good neighbors
+          |> Enum.map(fn {n, _h} -> n end)
+        end,
+        fn _a, _b -> 1 end,
+        fn _a, _b -> 1 end
+      },
+      start_at,
+      end_at
+    )
+  end
+
+  def find_starts(%{map: env}) do
+    env
+    |> Enum.filter(fn {_point, h} -> h == 1 end)
+    |> Enum.map(fn {point, _h} -> point end)
+  end
+end
+```
+
+## Part 01
+
+```elixir
+map =
+  data
+  |> Climber.parse()
+
+# find our path
+Climber.find_path(map.map, map.start_at, map.end_at)
+|> length()
+```
+
+## Part 02
+
+```elixir
+map =
+  data
+  |> Climber.parse()
+
+# find possible starting points
+map
+|> Climber.find_starts()
+|> Enum.map(fn start_at ->
+  Climber.find_path(map.map, start_at, map.end_at) |> length()
+end)
+
+# reject non-existant paths
+|> Enum.reject(fn d -> d == 0 end)
+|> Enum.min()
+```
