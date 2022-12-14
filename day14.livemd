@@ -124,3 +124,43 @@ data
 |> Enum.filter(fn {_p, %{type: t}} -> t == :sand end)
 |> length()
 ```
+
+## Diagram
+
+```elixir
+defmodule SandDrawing do
+  def draw(space) do
+    {x_l, x_r} = width(space)
+    {y_t, y_b} = height(space)
+
+    y_t..y_b
+    |> Enum.map(fn y ->
+      x_l..x_r
+      |> Enum.map(fn x ->
+        case space |> Map.get({x, y}, %{type: :empty}) do
+          %{type: :empty} -> "⬜️"
+          %{type: :sand} -> "🟡"
+          %{type: :rock} -> "⬛️"
+        end
+      end)
+      |> Enum.join("")
+      |> IO.puts()
+    end)
+  end
+
+  def width(space) do
+    space |> Enum.map(fn {{x, _y}, _v} -> x end) |> Enum.min_max()
+  end
+
+  def height(space) do
+    space |> Enum.map(fn {{_x, y}, _v} -> y end) |> Enum.min_max()
+  end
+end
+```
+
+```elixir
+data
+|> Annealler.parse_rocks()
+|> Annealler.anneal({500, 0}, true)
+|> SandDrawing.draw()
+```
