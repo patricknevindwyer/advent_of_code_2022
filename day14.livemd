@@ -1,0 +1,126 @@
+# Day 14
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day14/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Annealler do
+  def parse_rocks(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.with_index()
+    |> Enum.map(&parse_rock/1)
+    |> List.flatten()
+    |> Map.new()
+  end
+
+  defp parse_rock({rock_line, rock_num}) do
+    rock_line
+    |> String.split(" -> ")
+    |> Enum.map(&parse_point/1)
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.map(&build_ledge/1)
+    |> List.flatten()
+    |> Enum.map(fn p -> {p, %{type: :rock, rock: rock_num}} end)
+  end
+
+  defp parse_point(p) do
+    [x, y] = p |> String.split(",") |> Enum.map(&String.to_integer/1)
+    {x, y}
+  end
+
+  defp build_ledge([{x_a, y_a}, {x_b, y_b}]) do
+    cond do
+      x_a < x_b -> x_a..x_b |> Enum.map(fn x_v -> {x_v, y_a} end)
+      x_a > x_b -> x_b..x_a |> Enum.map(fn x_v -> {x_v, y_a} end)
+      y_a < y_b -> y_a..y_b |> Enum.map(fn y_v -> {x_a, y_v} end)
+      y_a > y_b -> y_b..y_a |> Enum.map(fn y_v -> {x_a, y_v} end)
+    end
+  end
+
+  def anneal(space, source, floor \\ false) do
+    # precalculate the lowest rock
+    lowest_rock = space |> lowest(:rock)
+
+    case space |> trace(source, lowest_rock, floor) do
+      {:void, _} ->
+        space
+
+      {:anneal, point} ->
+        if rem(map_size(space), 1000) == 0 do
+          IO.puts("Annealing top(#{highest(space, :sand)}) into space(#{map_size(space)})")
+        end
+
+        if floor do
+          if point == {500, 0} do
+            space |> Map.put(point, %{type: :sand})
+          else
+            space |> Map.put(point, %{type: :sand}) |> anneal(source, floor)
+          end
+        else
+          space |> Map.put(point, %{type: :sand}) |> anneal(source, floor)
+        end
+    end
+  end
+
+  defp trace(space, {s_x, s_y}, lowest_rock, floor) do
+    # check our lowest rock
+    floor_height = lowest_rock + 2
+
+    cond do
+      floor && s_y + 1 == floor_height ->
+        {:anneal, {s_x, s_y}}
+
+      !floor && s_y >= lowest_rock ->
+        {:void, {s_x, s_y}}
+
+      true ->
+        # determine if we come to rest or move
+        case {Map.has_key?(space, {s_x, s_y + 1}), Map.has_key?(space, {s_x - 1, s_y + 1}),
+              Map.has_key?(space, {s_x + 1, s_y + 1})} do
+          {false, _, _} -> trace(space, {s_x, s_y + 1}, lowest_rock, floor)
+          {true, false, _} -> trace(space, {s_x - 1, s_y + 1}, lowest_rock, floor)
+          {true, true, false} -> trace(space, {s_x + 1, s_y + 1}, lowest_rock, floor)
+          {true, true, true} -> {:anneal, {s_x, s_y}}
+        end
+    end
+  end
+
+  def lowest(space, type) do
+    space
+    |> Enum.filter(fn {_p, %{type: t}} -> t == type end)
+    |> Enum.map(fn {{_x, y}, _v} -> y end)
+    |> Enum.max()
+  end
+
+  def highest(space, type) do
+    space
+    |> Enum.filter(fn {_p, %{type: t}} -> t == type end)
+    |> Enum.map(fn {{_x, y}, _v} -> y end)
+    |> Enum.min()
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> Annealler.parse_rocks()
+|> Annealler.anneal({500, 0})
+|> Enum.filter(fn {_p, %{type: t}} -> t == :sand end)
+|> length()
+```
+
+## Part 02
+
+```elixir
+data
+|> Annealler.parse_rocks()
+|> Annealler.anneal({500, 0}, true)
+|> Enum.filter(fn {_p, %{type: t}} -> t == :sand end)
+|> length()
+```
