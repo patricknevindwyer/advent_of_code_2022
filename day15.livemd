@@ -46,21 +46,7 @@ defmodule SensorMesh do
 
   def excluded_count_at_row(sensors, row) do
     # walk each sensor and determine the spots that cannot be on that row
-    covered_ranges =
-      sensors
-      |> Enum.map(fn sensor ->
-        cells_in_row(sensor, row)
-      end)
-
-      # remove non-ranges
-      |> Enum.reject(fn v -> v == 0 end)
-
-      # sort by starting point
-      |> Enum.sort_by(fn {s_x, _e_x} -> s_x end)
-
-      # convert to ranges and reduce until overlaps are gone
-      |> Enum.map(fn {s_x, e_x} -> Range.new(s_x, e_x) end)
-      |> reduced_ranges([])
+    covered_ranges = covered_ranges(sensors, row)
 
     # now figure out how many things we need to _remove_ from coverage
     # on this row
@@ -83,7 +69,68 @@ defmodule SensorMesh do
     |> Kernel.-(filled)
   end
 
-  defp in_ranges(ranges, row, {x, y} = spot) do
+  def triangulate(sensors, max_range \\ 20) do
+    # collect sensor covered ranges per row
+    tri_y =
+      0..max_range
+      |> Enum.find_index(fn row ->
+        # Make some ranges
+        covered_ranges = covered_ranges(sensors, row)
+
+        # determine if a gap exists in the row
+        gap_in_range?(covered_ranges, {0, max_range})
+      end)
+
+    tri_x = sensors |> covered_ranges(tri_y) |> gap_in_range({0, max_range})
+
+    {tri_x, tri_y}
+  end
+
+  defp gap_in_range?(ranges, check_range) do
+    gap_in_range(ranges, check_range) != :empty
+  end
+
+  defp gap_in_range(ranges, {start, finish}) do
+    case remove_from_range(ranges, {start, finish}) do
+      :empty -> :empty
+      {s, _f} -> s
+    end
+  end
+
+  defp remove_from_range(_any, nil), do: :empty
+  defp remove_from_range([], {start, finish}), do: {start, finish}
+
+  defp remove_from_range([range | ranges], {start, finish}) do
+    r_s = range.first
+    r_f = range.last
+
+    cond do
+      r_f < start -> remove_from_range(ranges, {start, finish})
+      r_s > finish -> remove_from_range(ranges, {start, finish})
+      r_s <= start && r_f >= finish -> :empty
+      r_s < start && r_f < finish -> remove_from_range(ranges, {r_f + 1, finish})
+      r_s > start && r_f > finish -> remove_from_range(ranges, {start, r_s - 1})
+    end
+  end
+
+  defp covered_ranges(sensors, row) do
+    sensors
+    |> Enum.map(fn sensor ->
+      cells_in_row(sensor, row)
+    end)
+
+    # remove non-ranges
+    |> Enum.reject(fn v -> v == 0 end)
+
+    # sort by starting point
+    |> Enum.sort_by(fn {s_x, _e_x} -> s_x end)
+
+    # convert to ranges and reduce until overlaps are gone
+    |> Enum.map(fn {s_x, e_x} -> Range.new(s_x, e_x) end)
+    |> reduced_ranges([])
+  end
+
+  defp in_ranges(ranges, row, {x, y}) do
     if y != row do
       0
     else
@@ -132,4 +179,15 @@ end
 data
 |> SensorMesh.parse()
 |> SensorMesh.excluded_count_at_row(2_000_000)
+```
+
+## Part 02
+
+```elixir
+{distress_x, distress_y} =
+  data
+  |> SensorMesh.parse()
+  |> SensorMesh.triangulate(4_000_000)
+
+distress_x * 4_000_000 + distress_y
 ```
