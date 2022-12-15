@@ -1,0 +1,135 @@
+# Day 15
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day15/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule SensorMesh do
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_sensor/1)
+    |> Enum.map(&precompute/1)
+  end
+
+  defp parse_sensor(sensor) do
+    [sensor_loc, beacon_loc] =
+      sensor
+      |> String.split(": ")
+      |> Enum.map(&parse_pair/1)
+
+    %{beacon: beacon_loc, sensor: sensor_loc}
+  end
+
+  defp parse_pair(fragment) do
+    [x, y] =
+      fragment
+      |> String.split(", ")
+      |> Enum.map(fn piece ->
+        piece
+        |> String.split("=")
+        |> Enum.drop(1)
+        |> List.first()
+        |> String.to_integer()
+      end)
+
+    {x, y}
+  end
+
+  defp precompute(%{beacon: {b_x, b_y}, sensor: {s_x, s_y}} = sensor) do
+    # distance function
+    sensor |> Map.put(:distance, abs(b_x - s_x) + abs(b_y - s_y))
+  end
+
+  def excluded_count_at_row(sensors, row) do
+    # walk each sensor and determine the spots that cannot be on that row
+    covered_ranges =
+      sensors
+      |> Enum.map(fn sensor ->
+        cells_in_row(sensor, row)
+      end)
+
+      # remove non-ranges
+      |> Enum.reject(fn v -> v == 0 end)
+
+      # sort by starting point
+      |> Enum.sort_by(fn {s_x, _e_x} -> s_x end)
+
+      # convert to ranges and reduce until overlaps are gone
+      |> Enum.map(fn {s_x, e_x} -> Range.new(s_x, e_x) end)
+      |> reduced_ranges([])
+
+    # now figure out how many things we need to _remove_ from coverage
+    # on this row
+    filled =
+      sensors
+      |> Enum.map(fn %{sensor: {s_x, s_y}, beacon: {b_x, b_y}} ->
+        [{s_x, s_y}, {b_x, b_y}]
+      end)
+      |> List.flatten()
+      |> Enum.sort()
+      |> Enum.uniq()
+      |> Enum.map(fn {x, y} ->
+        in_ranges(covered_ranges, row, {x, y})
+      end)
+      |> Enum.sum()
+
+    covered_ranges
+    |> Enum.map(&Range.size/1)
+    |> Enum.sum()
+    |> Kernel.-(filled)
+  end
+
+  defp in_ranges(ranges, row, {x, y} = spot) do
+    if y != row do
+      0
+    else
+      ranges
+      |> Enum.map(fn range ->
+        if range.first <= x && range.last >= x do
+          1
+        else
+          0
+        end
+      end)
+      |> Enum.sum()
+    end
+  end
+
+  defp reduced_ranges([], acc), do: acc
+  defp reduced_ranges([a], acc), do: acc ++ [a]
+
+  defp reduced_ranges([a, b | rest], acc) do
+    if Range.disjoint?(a, b) do
+      reduced_ranges([b] ++ rest, acc ++ [a])
+    else
+      n_s = min(a.first, b.first)
+      n_e = max(a.last, b.last)
+      reduced_ranges([Range.new(n_s, n_e)] ++ rest, acc)
+    end
+  end
+
+  defp cells_in_row(%{sensor: {s_x, s_y}, distance: dist}, row) do
+    if s_y - dist > row || s_y + dist < row do
+      0
+    else
+      # calculate the cells that _could_ be in the row, return as
+      # a range
+      vert = abs(s_y - row)
+      remaining = dist - vert
+      {s_x - remaining, s_x + remaining}
+    end
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> SensorMesh.parse()
+|> SensorMesh.excluded_count_at_row(2_000_000)
+```
