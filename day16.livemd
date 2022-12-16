@@ -1,0 +1,282 @@
+# Day 16
+
+```elixir
+Mix.install([
+  {:eastar, "~> 0.5.1"}
+])
+```
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day16/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Valves do
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_entry/1)
+    |> Enum.map(fn %{valve: n} = entry -> {n, entry} end)
+    |> Map.new()
+  end
+
+  def map_paths(valves) when is_map(valves) do
+    # we'll do a pair wise map of all the keys to distances
+    keys = valves |> Map.keys()
+
+    keys
+    |> Enum.map(fn ka ->
+      keys
+      |> Enum.map(fn kb ->
+        {ka, kb}
+      end)
+    end)
+    |> List.flatten()
+    |> Enum.reject(fn {ka, kb} -> ka == kb end)
+    |> Enum.map(fn {ka, kb} ->
+      path =
+        Astar.astar(
+          {
+            fn v -> valves |> Map.get(v) |> Map.get(:neighbors) end,
+            fn _a, _b -> 1 end,
+            fn _a, _b -> 1 end
+          },
+          ka,
+          kb
+        )
+
+      {{ka, kb}, %{path: path}}
+    end)
+    |> Map.new()
+  end
+
+  def open_valves(valves, paths) do
+    recursive_steps(valves, paths, "AA", valves |> find_closed_valves(), 30, 0, 0)
+  end
+
+  defp find_closed_valves(valves) do
+    # only list closed valves that have > 0 flow rate
+    valves
+    |> Enum.reject(fn {_v, %{rate: r}} -> r == 0 end)
+    |> Enum.map(fn {v, _} -> v end)
+    |> MapSet.new()
+  end
+
+  defp recursive_steps(_valves, _paths, _location, _closed, 0, _flow_per_step, total_flow),
+    do: total_flow
+
+  defp recursive_steps(valves, paths, location, closed, step, flow_per_step, total_flow) do
+    if Enum.empty?(closed) do
+      total_flow + flow_per_step * step
+    else
+      # step to all closed valves
+      possibles =
+        closed
+        |> MapSet.to_list()
+        |> Enum.map(fn target ->
+          # distance to valve
+          dist = (paths |> Map.get({location, target}) |> Map.get(:path) |> length()) + 1
+
+          # flow of that target valve
+          flow = valves |> Map.get(target) |> Map.get(:rate)
+
+          # setup our next stage
+          {location, target, dist, flow}
+        end)
+
+        # reject any steps that take us too far
+        |> Enum.reject(fn {_loc, _tar, dist, _flow} -> step - dist < 0 end)
+
+        # now do the calculationst to take us to the next step
+        |> Enum.map(fn {_loc, tar, dist, flow} ->
+          recursive_steps(
+            valves,
+            paths,
+            tar,
+            closed |> MapSet.delete(tar),
+            step - dist,
+            flow_per_step + flow,
+            total_flow + flow_per_step * dist
+          )
+        end)
+
+      if Enum.empty?(possibles) do
+        total_flow + flow_per_step * step
+      else
+        possibles |> Enum.max()
+      end
+    end
+  end
+
+  defp parse_entry(line) do
+    [valve_raw, tunnels_raw] =
+      line
+      |> String.split("; ")
+
+    valve_raw
+    |> parse_valve()
+    |> Map.put(:neighbors, parse_tunnels(tunnels_raw))
+  end
+
+  defp parse_valve("Valve " <> v) do
+    [name | bits] =
+      v
+      |> String.split(" ")
+
+    rate =
+      bits
+      |> Enum.reverse()
+      |> List.first()
+      |> String.split("=")
+      |> Enum.drop(1)
+      |> List.first()
+      |> String.to_integer()
+
+    %{valve: name, rate: rate}
+  end
+
+  defp parse_tunnels("tunnels lead to valves " <> vs) do
+    vs
+    |> String.split(", ")
+  end
+
+  defp parse_tunnels("tunnel leads to valve " <> v), do: [v]
+end
+```
+
+```elixir
+defmodule QuickPaths do
+  def find(valves, paths) do
+    # fast figure the possible solutions
+    solutions = solution_for(valves, paths, ["AA"], 0, valves |> find_closed_valves())
+    IO.puts("Calculated #{length(solutions)} possible paths")
+
+    # now calculate the flow for each
+    solutions_with_flow =
+      solutions
+      |> Enum.map(fn {[_head | solution]} ->
+        total_flow = total_flow_for(valves, paths, "AA", solution)
+
+        {MapSet.new(solution), total_flow}
+      end)
+
+    IO.puts("   - Added flow data")
+
+    solutions_with_flow =
+      solutions_with_flow
+      |> Enum.sort_by(fn {_, f} -> f end)
+      |> Enum.reverse()
+
+    solutions_length = length(solutions_with_flow)
+
+    Stream.unfold({0, -1}, fn {a, b} ->
+      n =
+        case {a >= solutions_length, b >= solutions_length} do
+          {false, false} -> {a, b + 1}
+          {false, true} -> {a + 1, a}
+          {true, _} -> nil
+        end
+
+      {n, n}
+    end)
+    |> Stream.map(fn {l_idx, r_idx} ->
+      {
+        solutions_with_flow |> Enum.at(l_idx),
+        solutions_with_flow |> Enum.at(r_idx)
+      }
+    end)
+    |> Stream.filter(fn {{swf_a, _}, {swf_b, _}} -> MapSet.disjoint?(swf_a, swf_b) end)
+    |> Stream.filter(fn {{_, a}, {_, b}} -> a + b > 2400 end)
+    |> Stream.take(1)
+    |> Enum.to_list()
+    |> Enum.map(fn {{_, a}, {_, b}} -> a + b end)
+    |> List.first()
+  end
+
+  defp total_flow_for(valves, paths, last, path, steps \\ 26, flow_rate \\ 0, total_flow \\ 0)
+
+  defp total_flow_for(_valves, _paths, _last, [], steps, flow_rate, total_flow),
+    do: total_flow + flow_rate * steps
+
+  defp total_flow_for(valves, paths, last, [valve | rest], steps, flow_rate, total_flow) do
+    dist = (paths |> Map.get({last, valve}) |> Map.get(:path) |> length()) + 1
+    flow = valves |> Map.get(valve) |> Map.get(:rate)
+
+    total_flow_for(
+      valves,
+      paths,
+      valve,
+      rest,
+      steps - dist,
+      flow_rate + flow,
+      total_flow + flow_rate * dist
+    )
+  end
+
+  defp find_closed_valves(valves) do
+    # only list closed valves that have > 0 flow rate
+    valves
+    |> Enum.reject(fn {_v, %{rate: r}} -> r == 0 end)
+    |> Enum.map(fn {v, _} -> v end)
+    |> MapSet.new()
+  end
+
+  defp solution_for(valves, paths, visited, distance, closed) do
+    tail = visited |> Enum.reverse() |> List.first()
+
+    # iterate all closed valves
+    closed
+    |> MapSet.to_list()
+    |> Enum.map(fn v ->
+      # what's the distance
+      dist = paths |> Map.get({tail, v}) |> Map.get(:path) |> length()
+
+      # setup a recursion, or return this value?
+      if dist + 1 + distance > 25 do
+        {
+          visited
+        }
+      else
+        solution_for(
+          valves,
+          paths,
+          visited ++ [v],
+          distance + (dist + 1),
+          MapSet.delete(closed, v)
+        )
+      end
+    end)
+    |> List.flatten()
+  end
+end
+```
+
+## Part 01
+
+```elixir
+valves =
+  data
+  |> Valves.parse()
+
+paths =
+  valves
+  |> Valves.map_paths()
+
+Valves.open_valves(valves, paths)
+```
+
+## Part 02
+
+```elixir
+valves =
+  data
+  |> Valves.parse()
+
+paths =
+  valves
+  |> Valves.map_paths()
+
+QuickPaths.find(valves, paths)
+```
