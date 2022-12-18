@@ -1,0 +1,133 @@
+# Day 18
+
+```elixir
+Mix.install([
+  {:eastar, "~> 0.5.1"}
+])
+```
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day18/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Droplets do
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_droplet/1)
+  end
+
+  defp parse_droplet(drop) do
+    drop |> String.split(",") |> Enum.map(&String.to_integer/1) |> List.to_tuple()
+  end
+
+  def surfaces(drops) when is_list(drops) do
+    drops |> Enum.map(&surfaces/1) |> List.flatten()
+  end
+
+  def surfaces({x, y, z}) do
+    [
+      {{x - 1, x}, y, z},
+      {{x, x + 1}, y, z},
+      {x, {y - 1, y}, z},
+      {x, {y, y + 1}, z},
+      {x, y, {z - 1, z}},
+      {x, y, {z, z + 1}}
+    ]
+  end
+
+  def visible_surfaces(drops) do
+    drops
+    |> surfaces()
+    |> Enum.group_by(fn s -> s end)
+    |> Enum.reject(fn {_surface, surfs} -> length(surfs) > 1 end)
+  end
+
+  def steam_surfaces(drops) do
+    # fast droplet lookup
+    drop_set = drops |> MapSet.new()
+
+    # now do some analysis via A* search
+    visible =
+      drops
+      |> visible_surfaces()
+      |> tap_size("visible")
+      |> Enum.map(fn {g, _} -> g end)
+      |> tap_size("surfaces")
+      |> Enum.map(fn surface -> select_surface(drop_set, surface) end)
+      |> tap_size("selected")
+      |> Enum.filter(fn surface ->
+        route =
+          Astar.astar(
+            {
+              fn cur -> neighbors(drop_set, cur) end,
+              fn _from, _to -> 1 end,
+              fn {f_x, f_y, f_z}, {t_x, t_y, t_z} ->
+                abs(f_x - t_x) + abs(f_y - t_y) + abs(f_z - t_z)
+              end
+            },
+            surface,
+            {0, 0, 0}
+          )
+
+        length(route) > 0
+      end)
+      |> tap_size("astar")
+
+    visible
+  end
+
+  defp tap_size(l, msg) do
+    IO.puts("tap(#{msg}) length: #{length(l)}")
+    l
+  end
+
+  defp select_surface(drop_set, compound_surface) do
+    compound_surface
+    |> project_surface()
+    |> Enum.reject(fn s -> MapSet.member?(drop_set, s) end)
+    |> List.first()
+  end
+
+  defp neighbors(drop_set, {x, y, z}) do
+    [
+      {x - 1, y, z},
+      {x + 1, y, z},
+      {x, y - 1, z},
+      {x, y + 1, z},
+      {x, y, z - 1},
+      {x, y, z + 1}
+    ]
+    |> Enum.reject(fn v -> MapSet.member?(drop_set, v) end)
+  end
+
+  defp project_surface({{a, b}, y, z}), do: [{a, y, z}, {b, y, z}]
+  defp project_surface({x, {a, b}, z}), do: [{x, a, z}, {x, b, z}]
+  defp project_surface({x, y, {a, b}}), do: [{x, y, a}, {x, y, b}]
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> Droplets.parse()
+|> Droplets.visible_surfaces()
+|> length()
+```
+
+## Part 02
+
+```elixir
+drops = data |> Droplets.parse()
+
+surfaces = drops |> Droplets.steam_surfaces() |> length()
+```
+
+* `2146` - A* with 1 boundary edges and constant distance (wrong)
+* `2130` - A* with 2 boundary edges and constant distance (wrong)
+* `2052` - A* with 3 boundary edges and constant distance (wrong)
+* `2604` - A* with `{0, 0, 0}` goal and manhattan distance (correct!)
