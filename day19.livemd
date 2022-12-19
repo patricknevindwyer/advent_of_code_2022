@@ -3,7 +3,7 @@
 ## Data
 
 ```elixir
-data = "#{__DIR__}/data/day19/test01.dat" |> File.read!()
+data = "#{__DIR__}/data/day19/part01.dat" |> File.read!()
 ```
 
 ```elixir
@@ -65,140 +65,123 @@ end
 
 ```elixir
 defmodule Factory do
-  def first_available(blueprint) when is_map(blueprint) do
-    build(
-      [:ore],
-      [],
-      default_resources(),
-      blueprint,
-      24
-    )
+  def first_available(id, blueprint, time \\ 24) when is_map(blueprint) do
+    # setup our cache
+    cache = :ets.new(String.to_atom("cache_#{id}"), [:set])
+
+    res =
+      build(
+        [:ore],
+        [],
+        default_resources(),
+        blueprint,
+        cache,
+        time
+      )
+
+    # cleanup
+    :ets.delete(cache)
+    res
   end
 
-  defp build(r, _b, resources, _bp, 0), do: {r, resources}
+  defp build(r, _b, resources, _bp, _cache, 0), do: {r, resources}
 
-  defp build(robots, built, resources, blueprints, step) do
-    # all robots collect resources
-    updated_resources = collect_resources(resources, robots)
+  defp build(robots, built, resources, blueprints, cache, step) do
+    # check our cache
+    key = {robots |> Enum.frequencies(), built, resources, step}
 
-    # iterate through possible builds
-    possibilities =
-      [:geode, :obsidian, :clay, :ore]
-      |> Enum.filter(fn to_build ->
-        build_available?(updated_resources, blueprints, to_build)
-      end)
+    case :ets.lookup(cache, key) do
+      [{_, cached}] ->
+        cached
 
-    cond do
-      abundance?(updated_resources, blueprints, step) ->
-        {robots, updated_resources}
+      [] ->
+        # lots of redundant filtering going on, but 🤷🏼‍♀️
+        #  - functionally BFS with cache over {current bots, next bot, resources, time}
+        #  - always build a Geode or Obsidian if we can
+        #  - Don't build something if we already produce as much as we need
+        #  - otherwise start with a nop/none build and iterate
 
-      overbuilt?(robots, step) ->
-        {robots, updated_resources}
+        # all robots collect resources
+        updated_resources = collect_resources(resources, robots)
 
-      true ->
+        # iterate through possible builds based on resources
+        possibilities =
+          [:geode, :obsidian, :clay, :ore]
+          |> Enum.filter(fn to_build ->
+            build_available?(updated_resources, blueprints, to_build)
+          end)
+
+        # check what's available
         build_possibilities =
           cond do
             build_available?(updated_resources, blueprints, :geode) ->
               [:geode]
 
-            !Enum.empty?(build_firsts(updated_resources, blueprints, robots)) ->
-              build_firsts(updated_resources, blueprints, robots)
+            build_available?(updated_resources, blueprints, :obsidian) ->
+              [:obsidian]
 
-            # abundance?(updated_resources, blueprints) -> possibilities
             true ->
               [:none] ++ possibilities
           end
 
-        build_possibilities
-        |> Enum.map(fn to_build ->
-          build(
-            robots ++ built,
-            [to_build] |> Enum.reject(fn v -> v == :none end),
-            updated_resources |> minus_cost(blueprints, to_build),
-            blueprints,
-            step - 1
-          )
-        end)
-        |> Enum.sort_by(fn {_robots, %{geode: g}} -> g end)
-        |> Enum.reverse()
-        |> List.first()
+        # If production for a type is already > than max cost for a type,
+        # then remove
+        max_costs = max_costs(blueprints)
+        prod = current_production(robots)
+
+        # walk through our builds
+        best =
+          build_possibilities
+          |> Enum.reject(fn bot ->
+            case bot do
+              :none ->
+                false
+
+              :clay ->
+                # what does an obsidian cost?
+                Map.get(prod, :clay, 0) >= blueprints |> Map.get(:obsidian) |> Map.get(:clay)
+
+              :ore ->
+                # are we already producing enough?
+                Map.get(prod, :ore, 0) >= Map.get(max_costs, :ore, 10000)
+
+              _other ->
+                # always build if we can
+                false
+            end
+          end)
+
+          # eh. This doesn't do much, but I don't want to re-run
+          |> Enum.take(3)
+          |> Enum.map(fn to_build ->
+            build(
+              robots ++ built,
+              [to_build] |> Enum.reject(fn v -> v == :none end),
+              updated_resources |> minus_cost(blueprints, to_build),
+              blueprints,
+              cache,
+              step - 1
+            )
+          end)
+          |> Enum.sort_by(fn {_robots, %{geode: g}} -> g end)
+          |> Enum.reverse()
+          |> List.first()
+
+        :ets.insert(cache, {key, best})
+        best
     end
-
-    # if length(possibilities) == 0 do
-    #   build(
-    #     robots ++ built,
-    #     [],
-    #     updated_resources,
-    #     blueprints,
-    #     step - 1
-    #   )
-    # else
-
-    #   build_possibilities = cond do
-    #     build_available?(updated_resources, blueprints, :geode) -> [:geode]
-    #     !Enum.empty?(build_firsts(updated_resources, blueprints, robots)) -> build_firsts(updated_resources, blueprints, robots)
-    #     # abundance?(updated_resources, blueprints) -> possibilities
-    #     true -> possibilities ++ [:none]
-    #   end
-
-    #   build_possibilities
-    #   |> Enum.map(fn to_build -> 
-
-    #     build(
-    #       robots ++ built,
-    #       [to_build] |> Enum.reject(fn v -> v == :none end),
-    #       updated_resources |> minus_cost(blueprints, to_build),
-    #       blueprints,
-    #       step - 1
-    #     )
-
-    #   end)
-    #   |> Enum.sort_by(fn {_robots, %{geode: g}} -> g end)
-    #   |> Enum.reverse()
-    #   |> List.first()
-    # end
   end
 
-  defp overbuilt?(robots, steps) when steps > 12 do
-    robots
-    |> Enum.frequencies()
-    |> Enum.map(fn {_, v} -> v > steps end)
-    |> Enum.any?()
-  end
+  defp current_production(bots), do: Enum.frequencies(bots)
 
-  defp overbuilt?(_, _), do: false
-
-  defp build_firsts(resources, blueprints, robots) do
-    bots = MapSet.new(robots)
-
+  defp max_costs(blueprints) do
     blueprints
-    |> Map.keys()
-    |> Enum.reject(fn r -> MapSet.member?(bots, r) end)
-    |> Enum.filter(fn r ->
-      build_available?(resources, blueprints, r)
-    end)
-  end
-
-  # do we have too much of some things in early stages?
-  defp abundance?(_, _, step) when step <= 18, do: false
-
-  defp abundance?(resources, blueprints, step) when step > 18 do
-    # anything more than double any max cost?
-    max_costs =
-      blueprints
-      |> Enum.map(fn {_k, parts} -> Map.to_list(parts) end)
-      |> List.flatten()
-      |> Enum.group_by(fn {k, _cost} -> k end, fn {_k, cost} -> cost end)
-      |> Enum.map(fn {k, costs} -> {k, Enum.max(costs)} end)
-      |> Map.new()
-
-    resources
-    |> Enum.map(fn {r, t} ->
-      max_cost = max_costs |> Map.get(r, 0)
-
-      t > max_cost * 3
-    end)
-    |> Enum.any?()
+    |> Map.values()
+    |> Enum.map(&Map.to_list/1)
+    |> List.flatten()
+    |> Enum.group_by(fn {t, _c} -> t end, fn {_t, c} -> c end)
+    |> Enum.map(fn {t, cs} -> {t, Enum.max(cs)} end)
+    |> Map.new()
   end
 
   defp collect_resources(current, robots) do
@@ -249,8 +232,21 @@ end
 data
 |> Blueprints.parse()
 |> Enum.map(fn {b_id, blueprint} ->
-  {_bots, %{geode: g}} = Factory.first_available(blueprint) |> IO.inspect()
+  {_bots, %{geode: g}} = Factory.first_available(b_id, blueprint) |> IO.inspect()
   b_id * g
 end)
 |> Enum.sum()
+```
+
+## Section
+
+```elixir
+data
+|> Blueprints.parse()
+|> Enum.take(3)
+|> Enum.map(fn {b_id, blueprint} ->
+  {_bots, %{geode: g}} = Factory.first_available(b_id, blueprint, 32) |> IO.inspect()
+  g
+end)
+|> Enum.reduce(1, fn a, b -> a * b end)
 ```
