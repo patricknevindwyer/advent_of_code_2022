@@ -1,0 +1,256 @@
+# Day 19
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day19/test01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Blueprints do
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_blueprint/1)
+  end
+
+  defp parse_blueprint("Blueprint " <> print) do
+    [id, ingredients] =
+      print
+      |> String.split(": ")
+
+    {id |> String.to_integer(), ingredients |> parse_ingredients()}
+  end
+
+  defp parse_ingredients(raw) do
+    raw
+    |> String.split(".", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.map(&parse_ingredient/1)
+    |> Map.new()
+  end
+
+  defp parse_ingredient("Each " <> dirs) do
+    [robot, parts] =
+      dirs
+      |> String.split(" costs ")
+
+    [robot_type, _] = robot |> String.split(" ")
+
+    r_parts =
+      parts
+      |> String.split(" and ")
+      |> Enum.map(&parse_part/1)
+
+    {
+      robot_type |> String.to_atom(),
+      r_parts |> Map.new() |> Enum.into(default_parts())
+    }
+  end
+
+  defp parse_part(raw) do
+    [count, part] = raw |> String.split(" ")
+
+    {
+      part |> String.to_atom(),
+      count |> String.to_integer()
+    }
+  end
+
+  defp default_parts do
+    %{ore: 0, clay: 0, obsidian: 0}
+  end
+end
+```
+
+```elixir
+defmodule Factory do
+  def first_available(blueprint) when is_map(blueprint) do
+    build(
+      [:ore],
+      [],
+      default_resources(),
+      blueprint,
+      24
+    )
+  end
+
+  defp build(r, _b, resources, _bp, 0), do: {r, resources}
+
+  defp build(robots, built, resources, blueprints, step) do
+    # all robots collect resources
+    updated_resources = collect_resources(resources, robots)
+
+    # iterate through possible builds
+    possibilities =
+      [:geode, :obsidian, :clay, :ore]
+      |> Enum.filter(fn to_build ->
+        build_available?(updated_resources, blueprints, to_build)
+      end)
+
+    cond do
+      abundance?(updated_resources, blueprints, step) ->
+        {robots, updated_resources}
+
+      overbuilt?(robots, step) ->
+        {robots, updated_resources}
+
+      true ->
+        build_possibilities =
+          cond do
+            build_available?(updated_resources, blueprints, :geode) ->
+              [:geode]
+
+            !Enum.empty?(build_firsts(updated_resources, blueprints, robots)) ->
+              build_firsts(updated_resources, blueprints, robots)
+
+            # abundance?(updated_resources, blueprints) -> possibilities
+            true ->
+              [:none] ++ possibilities
+          end
+
+        build_possibilities
+        |> Enum.map(fn to_build ->
+          build(
+            robots ++ built,
+            [to_build] |> Enum.reject(fn v -> v == :none end),
+            updated_resources |> minus_cost(blueprints, to_build),
+            blueprints,
+            step - 1
+          )
+        end)
+        |> Enum.sort_by(fn {_robots, %{geode: g}} -> g end)
+        |> Enum.reverse()
+        |> List.first()
+    end
+
+    # if length(possibilities) == 0 do
+    #   build(
+    #     robots ++ built,
+    #     [],
+    #     updated_resources,
+    #     blueprints,
+    #     step - 1
+    #   )
+    # else
+
+    #   build_possibilities = cond do
+    #     build_available?(updated_resources, blueprints, :geode) -> [:geode]
+    #     !Enum.empty?(build_firsts(updated_resources, blueprints, robots)) -> build_firsts(updated_resources, blueprints, robots)
+    #     # abundance?(updated_resources, blueprints) -> possibilities
+    #     true -> possibilities ++ [:none]
+    #   end
+
+    #   build_possibilities
+    #   |> Enum.map(fn to_build -> 
+
+    #     build(
+    #       robots ++ built,
+    #       [to_build] |> Enum.reject(fn v -> v == :none end),
+    #       updated_resources |> minus_cost(blueprints, to_build),
+    #       blueprints,
+    #       step - 1
+    #     )
+
+    #   end)
+    #   |> Enum.sort_by(fn {_robots, %{geode: g}} -> g end)
+    #   |> Enum.reverse()
+    #   |> List.first()
+    # end
+  end
+
+  defp overbuilt?(robots, steps) when steps > 12 do
+    robots
+    |> Enum.frequencies()
+    |> Enum.map(fn {_, v} -> v > steps end)
+    |> Enum.any?()
+  end
+
+  defp overbuilt?(_, _), do: false
+
+  defp build_firsts(resources, blueprints, robots) do
+    bots = MapSet.new(robots)
+
+    blueprints
+    |> Map.keys()
+    |> Enum.reject(fn r -> MapSet.member?(bots, r) end)
+    |> Enum.filter(fn r ->
+      build_available?(resources, blueprints, r)
+    end)
+  end
+
+  # do we have too much of some things in early stages?
+  defp abundance?(_, _, step) when step <= 18, do: false
+
+  defp abundance?(resources, blueprints, step) when step > 18 do
+    # anything more than double any max cost?
+    max_costs =
+      blueprints
+      |> Enum.map(fn {_k, parts} -> Map.to_list(parts) end)
+      |> List.flatten()
+      |> Enum.group_by(fn {k, _cost} -> k end, fn {_k, cost} -> cost end)
+      |> Enum.map(fn {k, costs} -> {k, Enum.max(costs)} end)
+      |> Map.new()
+
+    resources
+    |> Enum.map(fn {r, t} ->
+      max_cost = max_costs |> Map.get(r, 0)
+
+      t > max_cost * 3
+    end)
+    |> Enum.any?()
+  end
+
+  defp collect_resources(current, robots) do
+    new_resources =
+      robots
+      |> Enum.frequencies()
+
+    current
+    |> Enum.map(fn {resource, quant} ->
+      {resource, quant + Map.get(new_resources, resource, 0)}
+    end)
+    |> Map.new()
+  end
+
+  defp minus_cost(resources, _b, :none), do: resources
+
+  defp minus_cost(resources, blueprints, robot) do
+    bp = blueprints |> Map.get(robot)
+
+    resources
+    |> Enum.map(fn {r, qua} ->
+      {
+        r,
+        qua - Map.get(bp, r, 0)
+      }
+    end)
+    |> Map.new()
+  end
+
+  defp build_available?(resources, blueprints, robot) do
+    blueprints
+    |> Map.get(robot)
+    |> Enum.map(fn {res, qua} ->
+      resources |> Map.get(res) |> Kernel.>=(qua)
+    end)
+    |> Enum.all?()
+  end
+
+  defp default_resources do
+    %{ore: 0, clay: 0, obsidian: 0, geode: 0}
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> Blueprints.parse()
+|> Enum.map(fn {b_id, blueprint} ->
+  {_bots, %{geode: g}} = Factory.first_available(blueprint) |> IO.inspect()
+  b_id * g
+end)
+|> Enum.sum()
+```
