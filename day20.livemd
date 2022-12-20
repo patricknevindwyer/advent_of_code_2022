@@ -1,0 +1,120 @@
+# Day 20
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day20/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Mixer do
+  def parse(data) do
+    data
+    |> String.split("\n")
+    |> Enum.map(&String.to_integer/1)
+    |> Enum.with_index()
+  end
+
+  def mix(cipher) do
+    mixed = mixologist(cipher, cipher, length(cipher), 0)
+
+    {
+      mixed,
+      mixed |> nth_after(0, 1000),
+      mixed |> nth_after(0, 2000),
+      mixed |> nth_after(0, 3000)
+    }
+  end
+
+  def super_mix(cipher) do
+    # prep values
+    big_cipher = cipher |> Enum.map(fn {v, i} -> {v * 811_589_153, i} end)
+
+    # mix
+    sm =
+      0..9
+      |> Enum.reduce(big_cipher, fn _, acc_cipher ->
+        mixologist(acc_cipher, big_cipher, length(big_cipher), 0)
+      end)
+
+    {
+      sm,
+      sm |> nth_after(0, 1000),
+      sm |> nth_after(0, 2000),
+      sm |> nth_after(0, 3000)
+    }
+  end
+
+  def nth_after(mixed, root, nth) do
+    r_idx = mixed |> Enum.find_index(fn {v, _} -> v == root end)
+
+    n_idx = rem(r_idx + nth, length(mixed))
+
+    mixed |> Enum.at(n_idx)
+  end
+
+  defp mixologist(mixed, _cipher, size, index) when size == index, do: mixed
+
+  defp mixologist(mixed, cipher, size, index) do
+    # which number are we mixing
+    {c, _o_idx} = candidate = cipher |> Enum.at(index)
+
+    # what is the current index
+    c_idx = mixed |> Enum.find_index(fn v -> v == candidate end)
+
+    # what should our target index be?
+    t_idx = rem(c + c_idx, size - 1)
+
+    # now drop our target index, insert our new index. we emulate
+    # being in a true circular list with some edge case COND blocks
+    cond do
+      t_idx == c_idx ->
+        mixed
+        |> mixologist(cipher, size, index + 1)
+
+      t_idx == 0 && c < 0 ->
+        # we're moving backwards, append at end
+        mixed
+        |> List.delete_at(c_idx)
+        |> Kernel.++([candidate])
+        |> mixologist(cipher, size, index + 1)
+
+      t_idx >= 0 ->
+        mixed
+        |> List.delete_at(c_idx)
+        |> List.insert_at(t_idx, candidate)
+        |> mixologist(cipher, size, index + 1)
+
+      true ->
+        mixed
+        |> List.delete_at(c_idx)
+        |> List.insert_at(t_idx - 1, candidate)
+        |> mixologist(cipher, size, index + 1)
+    end
+  end
+end
+```
+
+## Part 01
+
+```elixir
+{_mixed, {a, _}, {b, _}, {c, _}} =
+  data
+  |> Mixer.parse()
+  |> Mixer.mix()
+  |> IO.inspect(label: "mixed")
+
+a + b + c
+```
+
+## Part 02
+
+```elixir
+{_mixed, {a, _}, {b, _}, {c, _}} =
+  data
+  |> Mixer.parse()
+  |> Mixer.super_mix()
+  |> IO.inspect(label: "mixed")
+
+a + b + c
+```
