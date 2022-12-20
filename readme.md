@@ -19,6 +19,7 @@ Advent of Code 2022 using Elixir and LiveBook.
  - ★★ [Day 17](day17.livemd) - scrapped and rebuilt after reviewing other submissions
  - ★★ [Day 18](day18.livemd)
  - ★★ [Day 19](day19.livemd)
+ - ★★ [Day 20](day20.livemd)
  
  
  
