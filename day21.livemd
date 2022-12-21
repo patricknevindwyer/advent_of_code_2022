@@ -1,0 +1,136 @@
+# Day 21
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day21/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule MonkeyMath do
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(&parse_monkey/1)
+    |> Map.new()
+  end
+
+  defp parse_monkey(monkey) do
+    [name, raw_op] = monkey |> String.split(": ")
+    {name, parse_op(raw_op)}
+  end
+
+  defp parse_op(raw_op) do
+    if String.contains?(raw_op, " ") do
+      [lh, op, rh] = String.split(raw_op, " ")
+
+      {
+        :op,
+        op,
+        lh,
+        rh
+      }
+    else
+      {:literal, String.to_integer(raw_op)}
+    end
+  end
+
+  def solve_for(monkeys, name) do
+    case Map.get(monkeys, name) do
+      {:literal, v} -> v
+      {:op, "+", lh, rh} -> solve_for(monkeys, lh) + solve_for(monkeys, rh)
+      {:op, "-", lh, rh} -> solve_for(monkeys, lh) - solve_for(monkeys, rh)
+      {:op, "*", lh, rh} -> solve_for(monkeys, lh) * solve_for(monkeys, rh)
+      {:op, "/", lh, rh} -> div(solve_for(monkeys, lh), solve_for(monkeys, rh))
+    end
+  end
+
+  def human_in_the_loop(monkeys) do
+    # check the sides of root to see which one contains "humn". We 
+    # can solve for the opposite side and work from there
+    {:op, _, lh, rh} = Map.get(monkeys, "root")
+
+    {base, dep} =
+      if depends_on?(monkeys, lh, "humn") do
+        {
+          solve_for(monkeys, rh),
+          lh
+        }
+      else
+        {
+          solve_for(monkeys, lh),
+          rh
+        }
+      end
+
+    # now try and build a comparison
+    IO.puts("dep(#{dep})  base(#{base})")
+
+    # what is the current value of the dependent branch?
+    dep_orig = solve_for(monkeys, dep)
+    IO.puts("   dep original(#{dep_orig})")
+
+    humn_orig = solve_for(monkeys, "humn")
+    IO.puts("  humn original(#{humn_orig})")
+
+    # now search a wide range to figure out what our target
+    # value is. the range [10, humn * 10 billion] was pulled
+    # from some quick tests
+    binary_search(monkeys, base, dep, 10, humn_orig * 10_000_000_000)
+  end
+
+  defp binary_search(monkeys, base, dep, low, hi) do
+    # check our boundaries
+    low_v = monkeys |> replace_human(low) |> solve_for(dep)
+    hi_v = monkeys |> replace_human(hi) |> solve_for(dep)
+
+    # grab a mid point and test
+    mid = div(hi - low, 2) + low
+    mid_v = monkeys |> replace_human(mid) |> solve_for(dep)
+
+    # now some equality checks real quick
+    cond do
+      low_v == base -> low
+      hi_v == base -> hi
+      mid_v == base -> mid
+      low_v < hi_v && low_v < base && mid_v > base -> binary_search(monkeys, base, dep, low, mid)
+      low_v > hi_v && low_v > base && mid_v < base -> binary_search(monkeys, base, dep, low, mid)
+      true -> binary_search(monkeys, base, dep, mid, hi)
+    end
+  end
+
+  defp replace_human(monkeys, v) do
+    monkeys
+    |> Map.put("humn", {:literal, v})
+  end
+
+  defp depends_on?(monkeys, name, dependency) do
+    case Map.get(monkeys, name) do
+      {:literal, _} ->
+        name == dependency
+
+      {:op, _, lh, rh} ->
+        lh == name ||
+          rh == name ||
+          depends_on?(monkeys, lh, dependency) ||
+          depends_on?(monkeys, rh, dependency)
+    end
+  end
+end
+```
+
+## Part 01
+
+```elixir
+data
+|> MonkeyMath.parse()
+|> MonkeyMath.solve_for("root")
+```
+
+## Part 2
+
+```elixir
+data
+|> MonkeyMath.parse()
+|> MonkeyMath.human_in_the_loop()
+```
