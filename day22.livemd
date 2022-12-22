@@ -1,0 +1,380 @@
+# Day 22
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day22/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule GridPass do
+  def parse(raw) do
+    steps =
+      raw
+      |> String.split("\n")
+      |> Enum.reverse()
+      |> Enum.take(1)
+      |> List.first()
+      |> parse_directions()
+
+    grid =
+      raw
+      |> String.split("\n")
+      |> Enum.reverse()
+      |> Enum.drop(2)
+      |> Enum.reverse()
+      |> parse_grid()
+
+    {grid, steps}
+  end
+
+  defp parse_directions(raw) do
+    raw
+    |> String.split(~r{R|L}, include_captures: true)
+    |> Enum.map(fn d ->
+      case d do
+        "R" -> {:turn, :cw}
+        "L" -> {:turn, :ccw}
+        v -> {:move, String.to_integer(v)}
+      end
+    end)
+  end
+
+  defp parse_grid(lines) do
+    m =
+      lines
+      |> Enum.with_index()
+      |> Enum.map(fn {row, row_idx} ->
+        row
+        |> String.graphemes()
+        |> Enum.with_index()
+        |> Enum.map(fn {cell, col_idx} ->
+          {
+            {col_idx, row_idx},
+            case cell do
+              " " -> :void
+              "#" -> :wall
+              "." -> :open
+            end
+          }
+        end)
+      end)
+      |> List.flatten()
+      |> Map.new()
+
+    width = lines |> Enum.map(&String.length/1) |> Enum.max()
+    height = length(lines)
+
+    %{
+      grid: m,
+      width: width,
+      height: height
+    }
+  end
+
+  def find_start(grid) do
+    {{x, y, _f}, c} =
+      grid
+      |> find_cell_from(:right, {0, 0})
+
+    {{x, y}, c}
+    |> find_start(grid)
+  end
+
+  def walk(grid, directions, mode \\ :flat) do
+    {{x, y}, _} = grid |> find_start()
+    walk(grid, directions, {x, y, :right}, mode)
+  end
+
+  defp walk(_grid, [], facing, _wrap_method), do: facing
+
+  defp walk(grid, [dir | directions], facing, wrap_method) do
+    case dir do
+      {:turn, turn_dir} ->
+        walk(grid, directions, facing |> turn(turn_dir), wrap_method)
+
+      {:move, steps} ->
+        walk(grid, directions, facing |> take_steps(grid, steps, wrap_method), wrap_method)
+    end
+  end
+
+  defp turn({x, y, f}, :cw) do
+    dirs = [:right, :down, :left, :up, :right]
+    idx = dirs |> Enum.find_index(fn v -> v == f end)
+    nf = dirs |> Enum.at(idx + 1)
+    {x, y, nf}
+  end
+
+  defp turn({x, y, f}, :ccw) do
+    dirs = [:right, :up, :left, :down, :right]
+    idx = dirs |> Enum.find_index(fn v -> v == f end)
+    nf = dirs |> Enum.at(idx + 1)
+    {x, y, nf}
+  end
+
+  defp step_with_mode({_, _y, f}, :flat, _g) do
+    case f do
+      :right -> {1, 0, f}
+      :up -> {0, -1, f}
+      :left -> {-1, 0, f}
+      :down -> {0, 1, f}
+    end
+  end
+
+  defp step_with_mode({x, y, f}, :cube, grid) do
+    # determine if we're about to walk off of the cube
+    {f_d_x, f_d_y, _} = step_with_mode({x, y, f}, :flat, grid)
+
+    case get_cell(grid, {x + f_d_x, y + f_d_y}) do
+      :open ->
+        # we can just continue stepping normally
+        {f_d_x, f_d_y, f}
+
+      :wall ->
+        # we can just continue stepping normally
+        {f_d_x, f_d_y, f}
+
+      :void ->
+        # cube wrap
+        rewrap_face({x, y, f}, grid)
+
+      :out_of_bounds ->
+        # cube wrap
+        rewrap_face({x, y, f}, grid)
+    end
+  end
+
+  defp rewrap_face({x, y, f}, grid) do
+    # determine what our next face is
+    s = div(grid.width, 3)
+
+    r_x = rem(x, s)
+    r_y = rem(y, s)
+
+    {abs_x, abs_y, nf} =
+      case {which_reface({x, y}, grid), f} do
+        {:face_a, :up} ->
+          # wrap to left of F
+          {0, s * 3 + r_x, :right}
+
+        {:face_a, :left} ->
+          # wrap to left of D
+          {0, s * 2 + (s - r_y - 1), :right}
+
+        {:face_b, :up} ->
+          # wrap to bottom of F
+          {r_x, grid.height - 1, :up}
+
+        {:face_b, :right} ->
+          # wrap to right of E
+          {s * 2 - 1, s - r_y - 1 + s * 2, :left}
+
+        {:face_b, :down} ->
+          # wrap to right of C
+          {s * 2 - 1, s + r_x, :left}
+
+        {:face_c, :left} ->
+          # wrap to top of D
+          {r_y, s * 2, :down}
+
+        {:face_c, :right} ->
+          # wrap to bottom of B
+          {s * 2 + r_y, s - 1, :up}
+
+        {:face_d, :up} ->
+          # wrap to left of C
+          {s, s + r_x, :right}
+
+        {:face_d, :left} ->
+          # wrap to left of A
+          {s, s - r_y - 1, :right}
+
+        {:face_e, :right} ->
+          # wrap to right of B
+          {grid.width - 1, s - r_y - 1, :left}
+
+        {:face_e, :down} ->
+          # wrap to right of F
+          {s - 1, s * 3 + r_x, :left}
+
+        {:face_f, :left} ->
+          # wrap to top of A
+          {s + r_y, 0, :down}
+
+        {:face_f, :right} ->
+          # wrap to bottom of E
+          {s + r_y, s * 3 - 1, :up}
+
+        {:face_f, :down} ->
+          # wrap to top of B
+          {s * 2 + r_x, 0, :down}
+      end
+
+    {abs_x - x, abs_y - y, nf}
+  end
+
+  defp which_reface({x, y}, grid) do
+    face_size = div(grid.width, 3)
+
+    case {div(x, face_size), div(y, face_size)} do
+      {1, 0} -> :face_a
+      {2, 0} -> :face_b
+      {1, 1} -> :face_c
+      {0, 2} -> :face_d
+      {1, 2} -> :face_e
+      {0, 3} -> :face_f
+    end
+  end
+
+  def draw_face(f, msg \\ "") do
+    width = 50
+    IO.puts("Face [#{msg}]")
+    fm = f |> Map.new()
+
+    0..(width - 1)
+    |> Enum.map(fn y_idx ->
+      0..(width - 1)
+      |> Enum.map(fn x_idx ->
+        c = fm |> Map.get({x_idx, y_idx})
+
+        case c do
+          :void -> "⬛️"
+          :open -> "⬜️"
+          :wall -> "🟩"
+        end
+      end)
+      |> Enum.join("")
+      |> IO.puts()
+    end)
+
+    f
+  end
+
+  defp take_steps(f, _grid, 0, _wrap_method), do: f
+
+  defp take_steps({x, y, f}, grid, count, wrap_method) do
+    {dx, dy, df} = step_with_mode({x, y, f}, wrap_method, grid)
+
+    case get_cell(grid, {x + dx, y + dy}) do
+      :wall ->
+        {x, y, f}
+
+      :open ->
+        take_steps({x + dx, y + dy, df}, grid, count - 1, wrap_method)
+
+      :void ->
+        # we need to wrap, but where?
+        case find_cell_from(grid, f, {x, y}) do
+          {_, :wall} -> {x, y, df}
+          {{nx, ny, nf}, :open} -> take_steps({nx, ny, nf}, grid, count - 1, wrap_method)
+        end
+
+      :out_of_bounds ->
+        # we need to wrap, but where?
+        case find_cell_from(grid, f, {x, y}) do
+          {_, :wall} -> {x, y, f}
+          {{nx, ny, nf}, :open} -> take_steps({nx, ny, nf}, grid, count - 1, wrap_method)
+        end
+    end
+  end
+
+  defp wrap_dir(:right), do: :left
+  defp wrap_dir(:left), do: :right
+  defp wrap_dir(:down), do: :top
+  defp wrap_dir(:up), do: :bottom
+
+  defp find_start({{_, _}, :open} = cell, _grid), do: cell
+
+  defp find_start({{x, y}, _}, grid) do
+    grid
+    |> get_cell({x, y})
+    |> find_start(grid)
+  end
+
+  def get_cell(grid, {x, y}) do
+    if x < 0 || y < 0 || x >= grid.width || y >= grid.height do
+      :out_of_bounds
+    else
+      case grid.grid |> Map.get({x, y}) do
+        nil -> :void
+        v -> v
+      end
+    end
+  end
+
+  def find_cell_from(grid, f, {x, y}) do
+    dir = f |> wrap_dir()
+
+    {{nx, ny}, nc} =
+      case dir do
+        :left ->
+          grid.grid
+          |> Enum.filter(fn {{_, row_idx}, _} -> row_idx == y end)
+          |> Enum.sort_by(fn {{col_idx, _}, _} -> col_idx end)
+          |> Enum.drop_while(fn {_, v} -> v == :void end)
+          |> List.first()
+
+        :right ->
+          grid.grid
+          |> Enum.filter(fn {{_, row_idx}, _} -> row_idx == y end)
+          |> Enum.sort_by(fn {{col_idx, _}, _} -> col_idx end)
+          |> Enum.reverse()
+          |> Enum.drop_while(fn {_, v} -> v == :void end)
+          |> List.first()
+
+        :top ->
+          grid.grid
+          |> Enum.filter(fn {{col_idx, _}, _} -> col_idx == x end)
+          |> Enum.sort_by(fn {{_, row_idx}, _} -> row_idx end)
+          |> Enum.drop_while(fn {_, v} -> v == :void end)
+          |> List.first()
+
+        :bottom ->
+          grid.grid
+          |> Enum.filter(fn {{col_idx, _}, _} -> col_idx == x end)
+          |> Enum.sort_by(fn {{_, row_idx}, _} -> row_idx end)
+          |> Enum.reverse()
+          |> Enum.drop_while(fn {_, v} -> v == :void end)
+          |> List.first()
+      end
+
+    {{nx, ny, f}, nc}
+  end
+
+  def score_location({x, y, f}) do
+    f_s =
+      case f do
+        :right -> 0
+        :down -> 1
+        :left -> 2
+        :up -> 3
+      end
+
+    f_s + (y + 1) * 1000 + (x + 1) * 4
+  end
+end
+```
+
+## Part 01
+
+```elixir
+{grid, steps} =
+  data
+  |> GridPass.parse()
+
+grid
+|> GridPass.walk(steps)
+|> GridPass.score_location()
+```
+
+## Part 2
+
+```elixir
+{grid, steps} =
+  data
+  |> GridPass.parse()
+
+grid
+|> GridPass.walk(steps, :cube)
+|> GridPass.score_location()
+```
