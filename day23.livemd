@@ -1,0 +1,272 @@
+# Day 23
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day23/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule ElvishAutomata do
+  def parse(data) do
+    data
+    |> String.split("\n")
+    |> Enum.with_index()
+    |> Enum.map(fn {row, row_idx} ->
+      row
+      |> String.graphemes()
+      |> Enum.with_index()
+      |> Enum.map(fn {cell, col_idx} ->
+        {
+          {col_idx, row_idx},
+          case cell do
+            "#" -> :elf
+            _ -> :empty
+          end
+        }
+      end)
+    end)
+    |> List.flatten()
+    |> Enum.reject(fn {_, c} -> c == :empty end)
+    |> Map.new()
+  end
+
+  def step(cells, count \\ 10) do
+    inner_step(cells, [:north, :south, :west, :east], count)
+  end
+
+  defp inner_step(cells, _step_order, 0), do: cells
+
+  defp inner_step(cells, [first_step | rest_step] = step_order, count) do
+    # propose moves
+    moves =
+      cells
+      |> Enum.map(fn cell -> propose_move(cell, cells, step_order) end)
+      |> Enum.group_by(fn {opt, _, _} -> opt end)
+
+    # determine which cells are moving, and where they want to go, so we
+    # can try and reject moves
+    destinations =
+      moves
+      |> Map.get(:move, [])
+      |> Enum.group_by(fn {:move, _orig, dest} -> dest end)
+
+    # select moves
+    movers =
+      moves
+      |> Map.get(:move, [])
+      |> Enum.map(fn {:move, orig, dest} ->
+        if length(Map.get(destinations, dest)) == 1 do
+          dest
+        else
+          orig
+        end
+      end)
+
+    # stayers
+    stayers =
+      moves
+      |> Map.get(:stay, [])
+      |> Enum.map(fn {:stay, c, _} -> c end)
+
+    # IO.puts("step(#{count}) - stay(#{length(stayers)}) move(#{length(movers)})")
+    # finalize moves
+    (movers ++ stayers)
+    |> Enum.map(fn loc -> {loc, :elf} end)
+    |> Map.new()
+    |> inner_step(rest_step ++ [first_step], count - 1)
+  end
+
+  def step_until_still(cells) do
+    inner_step_until_still(cells, [:north, :south, :west, :east], 1)
+  end
+
+  defp inner_step_until_still(cells, [first_step | rest_step] = step_order, round) do
+    # propose moves
+    moves =
+      cells
+      |> Enum.map(fn cell -> propose_move(cell, cells, step_order) end)
+      |> Enum.group_by(fn {opt, _, _} -> opt end)
+
+    # determine which cells are moving, and where they want to go, so we
+    # can try and reject moves
+    destinations =
+      moves
+      |> Map.get(:move, [])
+      |> Enum.group_by(fn {:move, _orig, dest} -> dest end)
+
+    # select moves
+    movers =
+      moves
+      |> Map.get(:move, [])
+      |> Enum.map(fn {:move, orig, dest} ->
+        if length(Map.get(destinations, dest)) == 1 do
+          dest
+        else
+          orig
+        end
+      end)
+
+    # stayers
+    stayers =
+      moves
+      |> Map.get(:stay, [])
+      |> Enum.map(fn {:stay, c, _} -> c end)
+
+    if length(movers) == 0 do
+      {stayers |> Enum.map(fn loc -> {loc, :elf} end) |> Map.new(), round}
+    else
+      IO.puts("step(#{round}) - stay(#{length(stayers)}) move(#{length(movers)})")
+
+      # finalize moves
+      (movers ++ stayers)
+      |> Enum.map(fn loc -> {loc, :elf} end)
+      |> Map.new()
+      |> inner_step_until_still(rest_step ++ [first_step], round + 1)
+    end
+  end
+
+  defp propose_move({{x, y}, _}, cells, [a_step, b_step, c_step, d_step]) do
+    # get our neighborhood
+    neighs = neighbors(cells, {x, y})
+
+    cond do
+      Enum.empty?(neighs) ->
+        {:stay, {x, y}, {x, y}}
+
+      Enum.empty?(neighbors_in(neighs, {x, y}, a_step)) ->
+        {:move, {x, y}, move_dir({x, y}, a_step)}
+
+      Enum.empty?(neighbors_in(neighs, {x, y}, b_step)) ->
+        {:move, {x, y}, move_dir({x, y}, b_step)}
+
+      Enum.empty?(neighbors_in(neighs, {x, y}, c_step)) ->
+        {:move, {x, y}, move_dir({x, y}, c_step)}
+
+      Enum.empty?(neighbors_in(neighs, {x, y}, d_step)) ->
+        {:move, {x, y}, move_dir({x, y}, d_step)}
+
+      true ->
+        # IO.puts("NO MOVE POSSIBLE")
+        {:stay, {x, y}, {x, y}}
+    end
+  end
+
+  defp neighbors(cells, {x, y}) do
+    for nx <- -1..1, ny <- -1..1 do
+      {{nx + x, ny + y}, Map.get(cells, {nx + x, ny + y})}
+    end
+    |> Enum.reject(fn {_, c} -> c == nil end)
+    |> Enum.reject(fn {{nx, ny}, _} -> nx == x && ny == y end)
+    |> Map.new()
+  end
+
+  defp neighbors_in(neighbors, {x, y}, dir) do
+    case dir do
+      :north ->
+        # n, ne, nw
+        [{x, y - 1}, {x + 1, y - 1}, {x - 1, y - 1}]
+
+      :south ->
+        # s se sw
+        [{x, y + 1}, {x + 1, y + 1}, {x - 1, y + 1}]
+
+      :east ->
+        # e ne se
+        [{x + 1, y}, {x + 1, y - 1}, {x + 1, y + 1}]
+
+      :west ->
+        # w nw sw
+        [{x - 1, y}, {x - 1, y - 1}, {x - 1, y + 1}]
+    end
+    |> Enum.map(fn coord -> {coord, Map.get(neighbors, coord)} end)
+    |> Enum.reject(fn {_, c} -> c == nil end)
+    |> Map.new()
+  end
+
+  defp move_dir({x, y}, dir) do
+    case dir do
+      :north -> {x, y - 1}
+      :south -> {x, y + 1}
+      :east -> {x + 1, y}
+      :west -> {x - 1, y}
+    end
+  end
+
+  def draw(cells) do
+    {{min_x, max_x}, {min_y, max_y}} = boundary(cells)
+
+    min_y..max_y
+    |> Enum.map(fn y_idx ->
+      min_x..max_x
+      |> Enum.map(fn x_idx ->
+        case Map.get(cells, {x_idx, y_idx}, nil) do
+          nil -> "."
+          :elf -> "#"
+        end
+      end)
+      |> Enum.join("")
+      |> IO.puts()
+    end)
+
+    cells
+  end
+
+  def boundary(cells) do
+    {min_x, max_x} =
+      cells
+      |> Map.keys()
+      |> Enum.map(fn {x, _} -> x end)
+      |> Enum.min_max()
+
+    {min_y, max_y} =
+      cells
+      |> Map.keys()
+      |> Enum.map(fn {_, y} -> y end)
+      |> Enum.min_max()
+
+    {{min_x, max_x}, {min_y, max_y}}
+  end
+
+  def empties(cells) do
+    {{min_x, max_x}, {min_y, max_y}} = boundary(cells)
+
+    min_y..max_y
+    |> Enum.map(fn y_idx ->
+      min_x..max_x
+      |> Enum.map(fn x_idx ->
+        case Map.get(cells, {x_idx, y_idx}, nil) do
+          nil -> 1
+          :elf -> 0
+        end
+      end)
+    end)
+    |> List.flatten()
+    |> Enum.sum()
+  end
+end
+```
+
+## Part 1
+
+```elixir
+data
+|> ElvishAutomata.parse()
+|> ElvishAutomata.step()
+|> ElvishAutomata.draw()
+|> ElvishAutomata.empties()
+```
+
+## Part 2
+
+```elixir
+{cells, rounds} =
+  data
+  |> ElvishAutomata.parse()
+  |> ElvishAutomata.step_until_still()
+
+cells
+|> ElvishAutomata.draw()
+
+IO.puts("rounds(#{rounds})")
+```
