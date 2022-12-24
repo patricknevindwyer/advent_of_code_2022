@@ -71,20 +71,64 @@ defmodule Blizzard do
   end
 
   def walk(grid) do
-    # {path} = walk_dfs(grid, grid.start, [grid.start], 100_000, [])
-    # |> List.first()
-    # {length(path), path}
-    stack_walker(grid, [{grid.start, [grid.start]}], [{0, grid.grid}] |> Map.new())
+    stack_walker(grid, grid.finish, [{grid.start, [grid.start]}], [{0, grid.grid}] |> Map.new())
   end
 
-  defp stack_walker(%{finish: f} = grid, stack, blizzard_map) do
+  def there_and_back_again(grid) do
+    # start to finish
+    {s_to_f_path, s_to_f_cells} =
+      stack_walker(
+        grid,
+        grid.finish,
+        [
+          {grid.start, [grid.start]}
+        ],
+        [
+          {0, grid.grid}
+        ]
+        |> Map.new(),
+        "s to f"
+      )
+
+    # finish to start
+    {f_to_s_path, f_to_s_cells} =
+      stack_walker(
+        grid,
+        grid.start,
+        [
+          {grid.finish, [grid.finish]}
+        ],
+        [
+          {0, s_to_f_cells}
+        ]
+        |> Map.new(),
+        "f to s"
+      )
+
+    # start_to_elves
+    {s_to_e_path, _s_to_e_cells} =
+      stack_walker(
+        grid,
+        grid.finish,
+        [
+          {grid.start, [grid.start]}
+        ],
+        [
+          {0, f_to_s_cells}
+        ]
+        |> Map.new(),
+        "s to e"
+      )
+
+    s_to_f_path ++ f_to_s_path ++ s_to_e_path
+  end
+
+  defp stack_walker(grid, goal, stack, blizzard_map, leg \\ "1") do
     # find the shortest option in the stack
     [{{x, y} = n_step, n_path} | rest] =
       stack
-      |> Enum.sort_by(fn {loc, path} -> distance(loc, f) + length(path) end)
+      |> Enum.sort_by(fn {loc, path} -> distance(loc, goal) + length(path) end)
       |> Enum.uniq_by(fn {u_step, u_path} -> {u_step, length(u_path)} end)
-
-    # |> Enum.filter(fn {u_step, u_path} -> (length(u_path) + distance(u_step, f)) < @heuristic end)
 
     # what's the longest distance in the stack?
     worst = rest |> Enum.reverse() |> List.first()
@@ -92,31 +136,31 @@ defmodule Blizzard do
     w_dist =
       case worst do
         nil -> 10_000
-        {w_step, _} -> distance(w_step, f)
+        {w_step, _} -> distance(w_step, goal)
       end
 
     IO.puts(
-      "steps(#{length(n_path)}) to_finish(#{distance({x, y}, grid.finish)}) worst(#{w_dist}) stack(#{length(stack)}) blizzards(#{map_size(blizzard_map)})"
+      "leg(#{leg}) steps(#{length(n_path)}) to_finish(#{distance({x, y}, goal)}) worst(#{w_dist}) stack(#{length(stack)}) blizzards(#{map_size(blizzard_map)})"
     )
 
+    # do we have a blizzard for this time step?
+    updated_blizzard_map =
+      if Map.has_key?(blizzard_map, length(n_path)) do
+        blizzard_map
+      else
+        prev_state = blizzard_map |> Map.get(length(n_path) - 1)
+
+        Map.put(
+          blizzard_map,
+          length(n_path),
+          advance_blizzard(grid |> Map.put(:grid, prev_state))
+        )
+      end
+
     # is this the end? return
-    if n_step == f do
-      n_path
+    if n_step == goal do
+      {n_path, Map.get(updated_blizzard_map, length(n_path))}
     else
-      # do we have a blizzard for this time step?
-      updated_blizzard_map =
-        if Map.has_key?(blizzard_map, length(n_path)) do
-          blizzard_map
-        else
-          prev_state = blizzard_map |> Map.get(length(n_path) - 1)
-
-          Map.put(
-            blizzard_map,
-            length(n_path),
-            advance_blizzard(grid |> Map.put(:grid, prev_state))
-          )
-        end
-
       # find next step options from here
       new_cell_grid = Map.get(updated_blizzard_map, length(n_path))
 
@@ -129,7 +173,7 @@ defmodule Blizzard do
         end)
 
       # add these to the list, and continue
-      stack_walker(grid, rest ++ next_steps, updated_blizzard_map)
+      stack_walker(grid, goal, rest ++ next_steps, updated_blizzard_map, leg)
     end
   end
 
@@ -221,10 +265,21 @@ end
 ## Part 1
 
 ```elixir
-path =
+{path, _grid} =
   data
   |> Blizzard.parse()
   |> Blizzard.walk()
 
 IO.puts(length(path) - 1)
+```
+
+## Part 2
+
+```elixir
+path =
+  data
+  |> Blizzard.parse()
+  |> Blizzard.there_and_back_again()
+
+length(path) - 1
 ```
