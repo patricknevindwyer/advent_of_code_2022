@@ -1,0 +1,230 @@
+# Day 24
+
+## Data
+
+```elixir
+data = "#{__DIR__}/data/day24/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule Blizzard do
+  def parse(raw) do
+    grid =
+      raw
+      |> String.split("\n")
+      |> Enum.with_index()
+      |> Enum.map(fn {line, row_idx} ->
+        parse_row(line, row_idx)
+      end)
+      |> List.flatten()
+      |> Map.new()
+
+    # basic dims
+    width = (grid |> row(0) |> Enum.map(fn {{x, _}, _} -> x end) |> Enum.max()) + 1
+    height = (grid |> col(0) |> Enum.map(fn {{_, y}, _} -> y end) |> Enum.max()) + 1
+
+    # find the start
+    start =
+      grid
+      |> row(0)
+      |> Enum.filter(fn {_, c} -> c == :open end)
+      |> Enum.map(fn {p, _} -> p end)
+      |> List.first()
+
+    # find the end
+    finish =
+      grid
+      |> row(height - 1)
+      |> Enum.filter(fn {_, c} -> c == :open end)
+      |> Enum.map(fn {p, _} -> p end)
+      |> List.first()
+
+    %{
+      grid: grid,
+      width: width,
+      height: height,
+      start: start,
+      finish: finish
+    }
+  end
+
+  defp row(grid, r), do: grid |> Enum.filter(fn {{_, y}, _} -> y == r end) |> Map.new()
+  defp col(grid, c), do: grid |> Enum.filter(fn {{x, _}, _} -> x == c end) |> Map.new()
+
+  defp parse_row(line, row_idx) do
+    line
+    |> String.graphemes()
+    |> Enum.with_index()
+    |> Enum.map(fn {cell, col_idx} ->
+      p =
+        case cell do
+          "#" -> :wall
+          "." -> :open
+          ">" -> [{:blizzard, {1, 0}}]
+          "<" -> [{:blizzard, {-1, 0}}]
+          "v" -> [{:blizzard, {0, 1}}]
+          "^" -> [{:blizzard, {0, -1}}]
+        end
+
+      {{col_idx, row_idx}, p}
+    end)
+  end
+
+  def walk(grid) do
+    # {path} = walk_dfs(grid, grid.start, [grid.start], 100_000, [])
+    # |> List.first()
+    # {length(path), path}
+    stack_walker(grid, [{grid.start, [grid.start]}], [{0, grid.grid}] |> Map.new())
+  end
+
+  defp stack_walker(%{finish: f} = grid, stack, blizzard_map) do
+    # find the shortest option in the stack
+    [{{x, y} = n_step, n_path} | rest] =
+      stack
+      |> Enum.sort_by(fn {loc, path} -> distance(loc, f) + length(path) end)
+      |> Enum.uniq_by(fn {u_step, u_path} -> {u_step, length(u_path)} end)
+
+    # |> Enum.filter(fn {u_step, u_path} -> (length(u_path) + distance(u_step, f)) < @heuristic end)
+
+    # what's the longest distance in the stack?
+    worst = rest |> Enum.reverse() |> List.first()
+
+    w_dist =
+      case worst do
+        nil -> 10_000
+        {w_step, _} -> distance(w_step, f)
+      end
+
+    IO.puts(
+      "steps(#{length(n_path)}) to_finish(#{distance({x, y}, grid.finish)}) worst(#{w_dist}) stack(#{length(stack)}) blizzards(#{map_size(blizzard_map)})"
+    )
+
+    # is this the end? return
+    if n_step == f do
+      n_path
+    else
+      # do we have a blizzard for this time step?
+      updated_blizzard_map =
+        if Map.has_key?(blizzard_map, length(n_path)) do
+          blizzard_map
+        else
+          prev_state = blizzard_map |> Map.get(length(n_path) - 1)
+
+          Map.put(
+            blizzard_map,
+            length(n_path),
+            advance_blizzard(grid |> Map.put(:grid, prev_state))
+          )
+        end
+
+      # find next step options from here
+      new_cell_grid = Map.get(updated_blizzard_map, length(n_path))
+
+      # where can we go?
+      next_steps =
+        [{x - 1, y}, {x + 1, y}, {x, y - 1}, {x, y + 1}, {x, y}]
+        |> Enum.filter(fn loc -> Map.get(new_cell_grid, loc) == :open end)
+        |> Enum.map(fn s ->
+          {s, n_path ++ [s]}
+        end)
+
+      # add these to the list, and continue
+      stack_walker(grid, rest ++ next_steps, updated_blizzard_map)
+    end
+  end
+
+  defp distance({xa, ya}, {xb, yb}) do
+    abs(xb - xa) + abs(yb - ya)
+  end
+
+  def advance_blizzard(%{grid: cells} = grid) do
+    # select all of the blizzards and move them
+    cells
+    |> Enum.filter(fn {_, cell} ->
+      blizzard?(cell)
+    end)
+    |> Enum.map(fn {{x, y}, blizzards} ->
+      # list this cell as now possibly open
+      # now move all the blizzards
+      [
+        {{x, y}, :open}
+      ] ++
+        (blizzards
+         |> Enum.map(fn {:blizzard, {dx, dy}} ->
+           # would I hit a wall?
+           if wall?(grid, {x + dx, y + dy}) do
+             {wrap(grid, {dx, dy}, {x + dx, y + dy}), {:blizzard, {dx, dy}}}
+           else
+             {{x + dx, y + dy}, {:blizzard, {dx, dy}}}
+           end
+         end))
+    end)
+    |> List.flatten()
+
+    # gather everything by position
+    |> Enum.group_by(fn {loc, _} -> loc end, fn {_, t} -> t end)
+
+    # filter down the results so we don't have any overlapping types
+    |> Enum.map(fn {loc, ts} ->
+      case ts do
+        [:open] -> {loc, :open}
+        others -> {loc, others |> Enum.reject(fn t -> t == :open end)}
+      end
+    end)
+    |> Map.new()
+    |> Enum.into(cells)
+  end
+
+  defp blizzard?(:wall), do: false
+  defp blizzard?(:open), do: false
+  defp blizzard?(_), do: true
+
+  defp wall?(grid, {x, y}) do
+    cond do
+      x < 0 -> true
+      y < 0 -> true
+      x >= grid.width -> true
+      y >= grid.height -> true
+      Map.get(grid.grid, {x, y}) == :wall -> true
+      true -> false
+    end
+  end
+
+  defp wrap(grid, {dx, dy}, {x, y}) do
+    case {dx, dy} do
+      {-1, 0} ->
+        {grid.width - 2, y}
+
+      {1, 0} ->
+        {1, y}
+
+      {0, -1} ->
+        # now we need to check if we move through the finish
+        if grid.finish == {x, grid.height - 1} do
+          {x, grid.height - 1}
+        else
+          {x, grid.height - 2}
+        end
+
+      {0, 1} ->
+        # check if we move through the start
+        if grid.start == {x, 0} do
+          {x, 0}
+        else
+          {x, 1}
+        end
+    end
+  end
+end
+```
+
+## Part 1
+
+```elixir
+path =
+  data
+  |> Blizzard.parse()
+  |> Blizzard.walk()
+
+IO.puts(length(path) - 1)
+```
