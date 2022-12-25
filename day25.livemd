@@ -1,0 +1,83 @@
+# Day 25
+
+## Data
+
+```elixir
+cases = "#{__DIR__}/data/day25/cases01.dat" |> File.read!()
+data = "#{__DIR__}/data/day25/part01.dat" |> File.read!()
+```
+
+```elixir
+defmodule SnafuNumbers do
+  def parse_tests(raw) do
+    raw
+    |> String.split("\n")
+    |> Enum.map(fn line ->
+      [dec, sna] =
+        line
+        |> String.trim()
+        |> String.split(~r{\s+})
+        |> Enum.map(&String.trim/1)
+
+      {String.to_integer(dec), sna}
+    end)
+  end
+
+  def parse(raw) do
+    raw
+    |> String.split("\n")
+  end
+
+  def snafu_to_integer(sna) do
+    sna
+    |> String.graphemes()
+    |> Enum.reverse()
+    |> Enum.with_index()
+    |> Enum.map(fn {sna_d, idx} ->
+      snafu_modifier(sna_d) * Integer.pow(5, idx)
+    end)
+    |> Enum.sum()
+  end
+
+  defp snafu_modifier(s) do
+    case s do
+      "2" -> 2
+      "1" -> 1
+      "0" -> 0
+      "-" -> -1
+      "=" -> -2
+    end
+  end
+
+  def integer_to_snafu(x) do
+    i_to_s(x) |> Enum.join("")
+  end
+
+  def i_to_s(x) when x >= 0 and x <= 2, do: [x |> carry() |> elem(1)]
+
+  def i_to_s(sum) do
+    {carry, digit} = sum |> rem(5) |> carry()
+    i_to_s(div(sum, 5) + carry) ++ [digit]
+  end
+
+  defp carry(i) do
+    case i do
+      4 -> {1, "-"}
+      3 -> {1, "="}
+      2 -> {0, "2"}
+      1 -> {0, "1"}
+      0 -> {0, "0"}
+    end
+  end
+end
+```
+
+## Part 1
+
+```elixir
+data
+|> SnafuNumbers.parse()
+|> Enum.map(&SnafuNumbers.snafu_to_integer/1)
+|> Enum.sum()
+|> SnafuNumbers.integer_to_snafu()
+```
